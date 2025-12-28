@@ -13,7 +13,8 @@ import {
   useNavigate,
   Navigate,
 } from "react-router-dom";
-import { Bell, LogOut, Home, FileText, Clock, User, Sun, Moon, Trash2, Search, SortAsc, SortDesc } from "lucide-react";
+// import { Bell, LogOut, Home, FileText, Clock, User, Sun, Moon, Trash2, Search, SortAsc, SortDesc } from "lucide-react";
+import { Bell, LogOut, Home, FileText, Clock, User, Sun, Moon, Trash2, Search, SortAsc, SortDesc, Star } from "lucide-react";
 
 // ---------- Config ----------
 const AUTH_KEY = "ls_auth_user";
@@ -870,6 +871,7 @@ ${questionsText}
 
 // ---------- History ----------
 function HistoryPage({ dark }) {
+  const [showFavorites, setShowFavorites] = useState(false);
   const [items, setItems] = useState([]);
   const [status, setStatus] = useState("Loading...");
   const user = getCurrentUser();
@@ -905,6 +907,10 @@ function HistoryPage({ dark }) {
   useEffect(() => {
     // filter & sort client-side
     let arr = [...items];
+    if (showFavorites) {
+  arr = arr.filter(it => it.isFavorite);
+}
+
     if (search.trim()) {
       const s = search.trim().toLowerCase();
       arr = arr.filter((it) => (it.title || "").toLowerCase().includes(s) || (it.lectureId || "").includes(s));
@@ -917,7 +923,7 @@ function HistoryPage({ dark }) {
       arr.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
     }
     setFiltered(arr);
-  }, [items, search, sort]);
+  }, [items, search, sort, showFavorites]);
 
   async function handleDelete(lectureId) {
     if (!window.confirm("Delete this summary permanently?")) return;
@@ -933,6 +939,26 @@ function HistoryPage({ dark }) {
       alert("Delete failed: " + e.message);
     }
   }
+  async function toggleFavorite(lectureId, current) {
+  try {
+    await fetch(`${API_BASE}/api/lectures/${lectureId}/favorite`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isFavorite: !current }),
+    });
+
+    setItems(prev =>
+      prev.map(it =>
+        it.lectureId === lectureId
+          ? { ...it, isFavorite: !current }
+          : it
+      )
+    );
+  } catch {
+    alert("Failed to update favorite");
+  }
+}
+
 
   return (
     <div>
@@ -948,10 +974,29 @@ function HistoryPage({ dark }) {
           <button onClick={() => setSort("newest")} className={sort === "newest" ? "px-3 py-1 rounded bg-indigo-600 text-white" : dark ? "px-3 py-1 rounded bg-slate-700 text-white" : "px-3 py-1 rounded bg-white text-slate-800"}><SortDesc className="w-4 h-4 inline-block mr-1" />Newest</button>
           <button onClick={() => setSort("oldest")} className={sort === "oldest" ? "px-3 py-1 rounded bg-indigo-600 text-white" : dark ? "px-3 py-1 rounded bg-slate-700 text-white" : "px-3 py-1 rounded bg-white text-slate-800"}><SortAsc className="w-4 h-4 inline-block mr-1" />Oldest</button>
           <button onClick={() => setSort("title")} className={sort === "title" ? "px-3 py-1 rounded bg-indigo-600 text-white" : dark ? "px-3 py-1 rounded bg-slate-700 text-white" : "px-3 py-1 rounded bg-white text-slate-800"}>Title</button>
+          <button
+  onClick={() => setShowFavorites(v => !v)}
+  className={
+    showFavorites
+      ? "px-3 py-1 rounded bg-yellow-500 text-black"
+      : dark
+      ? "px-3 py-1 rounded bg-slate-700 text-white"
+      : "px-3 py-1 rounded bg-white text-slate-800"
+  }
+>
+  <Star className="w-4 h-4 inline-block mr-1" />
+  Favorites
+</button>
+
         </div>
       </div>
 
       {status && <div className={dark ? "text-sm text-slate-300" : "text-sm text-slate-500"}>{status}</div>}
+      {!status && showFavorites && filtered.length === 0 && (
+  <div className={dark ? "text-sm text-slate-300" : "text-sm text-slate-500"}>
+    ⭐ Please add favorites first
+  </div>
+)}
 
       {!status && filtered.length > 0 && (
         <div className="grid gap-3">
@@ -967,16 +1012,39 @@ function HistoryPage({ dark }) {
                 </div>
               </div>
               <div className="flex items-center gap-4">
-                <Link
-                  to={`/history/${it.lectureId}`}
-                  className={dark ? "text-indigo-300 text-sm" : "text-indigo-600 text-sm"}
-                >
-                  Open
-                </Link>
-                <button onClick={() => handleDelete(it.lectureId)} className={dark ? "flex items-center gap-2 text-sm text-red-300" : "flex items-center gap-2 text-sm text-red-600"}>
-                  <Trash2 className="w-4 h-4" /> Delete
-                </button>
-              </div>
+  {/* ⭐ Favorite */}
+  <button
+    onClick={() => toggleFavorite(it.lectureId, it.isFavorite)}
+    title="Toggle favorite"
+  >
+    <Star
+      className={`w-5 h-5 ${
+        it.isFavorite
+          ? "fill-yellow-400 text-yellow-400"
+          : dark
+          ? "text-slate-400"
+          : "text-slate-500"
+      }`}
+    />
+  </button>
+
+  {/* Open */}
+  <Link
+    to={`/history/${it.lectureId}`}
+    className={dark ? "text-indigo-300 text-sm" : "text-indigo-600 text-sm"}
+  >
+    Open
+  </Link>
+
+  {/* Delete */}
+  <button
+    onClick={() => handleDelete(it.lectureId)}
+    className={dark ? "flex items-center gap-2 text-sm text-red-300" : "flex items-center gap-2 text-sm text-red-600"}
+  >
+    <Trash2 className="w-4 h-4" /> Delete
+  </button>
+</div>
+
             </div>
           ))}
         </div>

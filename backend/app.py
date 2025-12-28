@@ -133,15 +133,17 @@ def process_lecture_background(
         }
 
         lectures_col.insert_one({
-            "lectureId": lecture_id,
-            "userId": user_id,
-            "title": title,
-            "uploadedAt": final_doc["uploadedAt"],
-            "audioPath": str(saved_path),
-            "summary": final_doc["summary"],
-            "keywords": keywords,
-            "questions": questions,
-        })
+    "lectureId": lecture_id,
+    "userId": user_id,
+    "title": title,
+    "uploadedAt": final_doc["uploadedAt"],
+    "audioPath": str(saved_path),
+    "summary": final_doc["summary"],
+    "keywords": keywords,
+    "questions": questions,
+    "isFavorite": False,   # ⭐ ADD THIS
+})
+
 
         with open(RESULTS_DIR / f"{lecture_id}.json", "w", encoding="utf-8") as f:
             json.dump(final_doc, f, indent=2)
@@ -425,6 +427,7 @@ def api_lectures():
                 "lectureId": doc.get("lectureId"),
                 "title": doc.get("title"),
                 "uploadedAt": doc.get("uploadedAt"),
+                "isFavorite": doc.get("isFavorite", False),
             }
         )
 
@@ -501,6 +504,20 @@ def api_user_stats(user_id):
 
     return jsonify({"count": count, "total_words": total_words, "joined": joined}), 200
 
+@app.route("/api/lectures/<lecture_id>/favorite", methods=["PATCH"])
+def toggle_favorite(lecture_id):
+    data = request.get_json(force=True)
+    is_fav = bool(data.get("isFavorite", False))
+
+    res = lectures_col.update_one(
+        {"lectureId": lecture_id},
+        {"$set": {"isFavorite": is_fav}}
+    )
+
+    if res.matched_count == 0:
+        return jsonify({"error": "Lecture not found"}), 404
+
+    return jsonify({"ok": True, "isFavorite": is_fav}), 200
 
 # Helpers for ObjectId
 def looks_like_objectid(s):
