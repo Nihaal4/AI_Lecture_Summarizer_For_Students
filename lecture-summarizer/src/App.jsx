@@ -493,9 +493,11 @@ function SummarizePage({ dark }) {
   const [file, setFile] = useState(null);
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [title, setTitle] = useState("");
+  const [summaryLength, setSummaryLength] = useState("medium");
   const [status, setStatus] = useState(null);
   const [result, setResult] = useState(null);
   const [lectureId, setLectureId] = useState(null);
+
 
 
   const [isProcessing, setIsProcessing] = useState(false);
@@ -519,10 +521,10 @@ const submit = async (e) => {
   setStatus("Uploading...");
 
   const fd = new FormData();
-  fd.append(
-    "title",
-    title || (mode === "file" ? file?.name || "Lecture" : "YouTube lecture")
-  );
+fd.append("title", title.trim());
+
+  fd.append("summaryLength", summaryLength);
+
 
   const currentUser = getCurrentUser();
   if (currentUser?.id) fd.append("userId", currentUser.id);
@@ -627,6 +629,26 @@ const submit = async (e) => {
             placeholder="e.g. Data Structures - Recursion"
           />
         </div>
+        {/* Summary Length */}
+<div>
+  <label className={dark ? "block text-sm text-slate-300" : "block text-sm text-slate-600"}>
+    Summary length
+  </label>
+  <select
+    value={summaryLength}
+    onChange={(e) => setSummaryLength(e.target.value)}
+    className={`mt-1 w-full px-3 py-2 border rounded ${
+      dark
+        ? "bg-slate-700 text-white border-slate-600"
+        : "bg-white text-slate-900 border-slate-300"
+    }`}
+  >
+    <option value="short">Short</option>
+    <option value="medium">Medium</option>
+    <option value="detailed">Detailed</option>
+  </select>
+</div>
+
 
         {/* File OR YouTube input */}
         {mode === "file" ? (

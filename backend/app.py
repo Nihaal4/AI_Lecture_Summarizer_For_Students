@@ -99,7 +99,8 @@ def process_lecture_background(
     lecture_id: str,
     title: str,
     saved_path: Path,
-    user_id: str | None
+    user_id: str | None,
+    summary_length: str
 ):
     try:
         update_progress(lecture_id, "Transcribing audio")
@@ -108,7 +109,7 @@ def process_lecture_background(
         segments = trans.get("segments", [])
 
         update_progress(lecture_id, "Summarizing lecture")
-        summary = summarize_long_text(full_text)
+        summary = summarize_long_text(full_text, summary_length)
 
         update_progress(lecture_id, "Extracting keywords")
         seg_texts = [s.get("text", "") for s in segments if s.get("text")]
@@ -203,7 +204,14 @@ def chunk_text_by_sentences(text: str, max_sentences_per_chunk: int = 40) -> Lis
     return chunks
 
 
-def summarize_long_text(text: str) -> str:
+def summarize_long_text(text: str, summary_length: str) -> str:
+    length_map = {
+    "short": 100,
+    "medium": 180,
+    "detailed": 300,
+    }
+    max_len = length_map.get(summary_length, 180)
+
     if not text or not text.strip():
         return ""
 
@@ -212,15 +220,26 @@ def summarize_long_text(text: str) -> str:
     small_summaries = []
     for c in chunks:
         try:
-            out = summarizer(c, max_length=120, min_length=25, truncation=True)
+            out = summarizer(
+    c,
+    max_length=max_len,
+    min_length=max(30, max_len // 3),
+    truncation=True
+)
+
             small_summaries.append(out[0]["summary_text"])
         except Exception:
             small_summaries.append(c[:600])
 
     combined = " ".join(small_summaries)
-    if len(combined.split()) > 300:
+    if len(combined.split()) > max_len * 1.5:
         try:
-            final = summarizer(combined, max_length=180, min_length=40, truncation=True)
+            final = summarizer(
+            combined,
+            max_length=max_len,
+            min_length=max(40, max_len // 3),
+            truncation=True
+            )
             return final[0]["summary_text"]
         except Exception:
             return combined[:1500]
@@ -470,8 +489,15 @@ def api_user_stats(user_id):
             full = ""
         total_words += len((full or "").split())
 
-    user = users_col.find_one({"_id": uuid_to_objectid(user_id)}) if looks_like_objectid(user_id) else None
+    from bson import ObjectId
+
+    try:
+        user = users_col.find_one({"_id": ObjectId(user_id)})
+    except Exception:
+        user = None
+
     joined = user.get("created_at") if user else None
+
 
     return jsonify({"count": count, "total_words": total_words, "joined": joined}), 200
 
@@ -496,6 +522,8 @@ def uuid_to_objectid(s):
 def upload():
     user_id = request.form.get("userId")
     title = request.form.get("title", "Lecture").strip()
+    summary_length = request.form.get("summaryLength", "medium")
+
 
     saved_path = None
 
@@ -527,6 +555,7 @@ def upload():
         "audioPath": str(saved_path),
         "status": "processing",
         "progress": "Queued",
+        "summaryLength": summary_length,
     }
 
     with open(RESULTS_DIR / f"{lecture_id}.json", "w", encoding="utf-8") as f:
@@ -534,7 +563,7 @@ def upload():
 
     threading.Thread(
         target=process_lecture_background,
-        args=(lecture_id, title, saved_path, user_id),
+        args=(lecture_id, title, saved_path, user_id, summary_length),
         daemon=True,
     ).start()
 
