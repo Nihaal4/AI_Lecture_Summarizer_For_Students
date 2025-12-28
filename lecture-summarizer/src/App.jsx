@@ -495,86 +495,89 @@ function SummarizePage({ dark }) {
   const [title, setTitle] = useState("");
   const [status, setStatus] = useState(null);
   const [result, setResult] = useState(null);
+  const [lectureId, setLectureId] = useState(null);
+
 
   const [isProcessing, setIsProcessing] = useState(false);
-  const [progress, setProgress] = useState(0);
   const [viewKeyPoints, setViewKeyPoints] = useState(false);
 
-  const submit = async (e) => {
-    e.preventDefault();
-    setStatus("");
-    setResult(null);
+const submit = async (e) => {
+  e.preventDefault();
+  setStatus("");
+  setResult(null);
 
-    if (mode === "file" && !file) {
-      setStatus("Please choose an audio file first.");
-      return;
-    }
-    if (mode === "youtube" && !youtubeUrl.trim()) {
-      setStatus("Please paste a YouTube lecture URL.");
-      return;
-    }
+  if (mode === "file" && !file) {
+    setStatus("Please choose an audio file first.");
+    return;
+  }
+  if (mode === "youtube" && !youtubeUrl.trim()) {
+    setStatus("Please paste a YouTube lecture URL.");
+    return;
+  }
 
-    setIsProcessing(true);
-    setProgress(5);
-    setStatus("Sending to server...");
+  setIsProcessing(true);
+  setStatus("Uploading...");
 
-    const fd = new FormData();
-    fd.append(
-      "title",
-      title || (mode === "file" ? file?.name || "Lecture" : "YouTube lecture")
-    );
+  const fd = new FormData();
+  fd.append(
+    "title",
+    title || (mode === "file" ? file?.name || "Lecture" : "YouTube lecture")
+  );
 
-    const currentUser = getCurrentUser();
-    if (currentUser?.id) {
-      fd.append("userId", currentUser.id);
-    }
+  const currentUser = getCurrentUser();
+  if (currentUser?.id) fd.append("userId", currentUser.id);
 
-    if (mode === "file") {
-      fd.append("audio", file);
-    } else {
-      fd.append("youtubeUrl", youtubeUrl.trim());
-    }
+  if (mode === "file") fd.append("audio", file);
+  else fd.append("youtubeUrl", youtubeUrl.trim());
 
-    // Simulated progress while backend works
-    let intervalId = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 90) return prev; // stop at 90% until done
-        return prev + 5;
-      });
-    }, 1000);
+  try {
+    const res = await fetch(`${API_BASE}/upload`, {
+      method: "POST",
+      body: fd,
+    });
 
-    try {
-      // 1) Upload + processing
-      const res = await fetch(`${API_BASE}/upload`, {
-        method: "POST",
-        body: fd,
-      });
-      const j = await res.json();
+    const j = await res.json();
 
-      if (!res.ok || !j.lectureId) {
-        setStatus(j.error || "Upload/processing failed");
-        setProgress(0);
-        return;
-      }
-
-      setStatus("Processing completed on server. Fetching full result...");
-      setProgress(95);
-
-      // 2) Fetch full result
-      const res2 = await fetch(`${API_BASE}/result/${j.lectureId}`);
-      const full = await res2.json();
-
-      setResult(full);
-      setStatus("✅ Done! Summary, keywords and questions are ready.");
-      setProgress(100);
-    } catch (err) {
-      setStatus("Failed: " + err.message);
-      setProgress(0);
-    } finally {
-      clearInterval(intervalId);
+    if (!res.ok || !j.lectureId) {
+      setStatus(j.error || "Upload failed");
       setIsProcessing(false);
+      return;
     }
-  };
+
+    // ✅ THIS IS THE KEY LINE
+    setLectureId(j.lectureId);
+    setStatus("Processing started...");
+
+  } catch (err) {
+    setStatus("Failed: " + err.message);
+    setIsProcessing(false);
+  }
+};
+
+  useEffect(() => {
+  if (!lectureId) return;
+
+  const poller = setInterval(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/result/${lectureId}`);
+      const data = await res.json();
+
+      // Show real backend progress
+      setStatus(data.progress || data.status);
+
+      if (data.status === "done" || data.progress?.startsWith("Failed")) {
+        setResult(data);
+        setIsProcessing(false);
+        clearInterval(poller);
+      }
+    } catch (e) {
+      setStatus("Error while fetching progress");
+    }
+  }, 2000);
+
+  return () => clearInterval(poller);
+}, [lectureId]);
+
 
   return (
     <div className={dark ? "bg-slate-800 p-6 rounded-lg border border-slate-700 text-white" : "bg-white p-6 rounded-lg border border-slate-200 text-slate-900"}>
@@ -661,18 +664,14 @@ function SummarizePage({ dark }) {
           </div>
 
           {/* Progress bar */}
-          {(isProcessing || progress > 0) && (
+          {isProcessing && (
             <div className="w-full">
               <div className={dark ? "w-full h-2 rounded bg-slate-700 overflow-hidden" : "w-full h-2 rounded bg-slate-200 overflow-hidden"}>
-                <div
-                  className="h-2 rounded bg-indigo-500 transition-all"
-                  style={{ width: `${progress}%` }}
-                />
+                <div className="h-2 rounded bg-indigo-500 w-1/2" />
               </div>
               <div className={dark ? "text-xs mt-1 text-slate-300" : "text-xs mt-1 text-slate-500"}>
-                {progress < 100
-                  ? `Processing... ${progress}%`
-                  : "Completed 100%"}
+Processing step: {status}
+
               </div>
             </div>
           )}

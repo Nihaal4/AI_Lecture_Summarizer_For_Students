@@ -12,7 +12,7 @@ Endpoints:
  - GET  /download_audio/<id> -> download original audio
  - GET  /api/user/<id>/stats -> returns user stats (count, total_words, joined)
 """
-
+import threading
 import os
 import uuid
 import json
@@ -82,6 +82,72 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 
 
 # ---------- Utility functions ----------
+
+def update_progress(lecture_id: str, progress: str):
+    fp = RESULTS_DIR / f"{lecture_id}.json"
+    if not fp.exists():
+        return
+
+    with open(fp, "r+", encoding="utf-8") as f:
+        data = json.load(f)
+        data["progress"] = progress
+        f.seek(0)
+        json.dump(data, f, indent=2)
+        f.truncate()
+
+def process_lecture_background(
+    lecture_id: str,
+    title: str,
+    saved_path: Path,
+    user_id: str | None
+):
+    try:
+        update_progress(lecture_id, "Transcribing audio")
+        trans = transcribe_audio(saved_path)
+        full_text = trans.get("text", "")
+        segments = trans.get("segments", [])
+
+        update_progress(lecture_id, "Summarizing lecture")
+        summary = summarize_long_text(full_text)
+
+        update_progress(lecture_id, "Extracting keywords")
+        seg_texts = [s.get("text", "") for s in segments if s.get("text")]
+        keywords = extract_keywords_tfidf(seg_texts or [full_text])
+
+        update_progress(lecture_id, "Generating questions")
+        questions = generate_questions_ai(summary, how_many=15)
+
+        final_doc = {
+            "lectureId": lecture_id,
+            "title": title,
+            "uploadedAt": datetime.utcnow().isoformat() + "Z",
+            "audioPath": str(saved_path),
+            "status": "done",
+            "progress": "Completed",
+            "transcript": segments,
+            "full_transcript": full_text,
+            "summary": {"short": summary},
+            "keywords": keywords,
+            "questions": questions,
+        }
+
+        lectures_col.insert_one({
+            "lectureId": lecture_id,
+            "userId": user_id,
+            "title": title,
+            "uploadedAt": final_doc["uploadedAt"],
+            "audioPath": str(saved_path),
+            "summary": final_doc["summary"],
+            "keywords": keywords,
+            "questions": questions,
+        })
+
+        with open(RESULTS_DIR / f"{lecture_id}.json", "w", encoding="utf-8") as f:
+            json.dump(final_doc, f, indent=2)
+
+    except Exception as e:
+        update_progress(lecture_id, f"Failed: {str(e)}")
+
 def allowed_file(filename: str) -> bool:
     return (
         "." in filename
@@ -427,119 +493,56 @@ def uuid_to_objectid(s):
 
 # ---------- Main processing endpoints ----------
 @app.route("/upload", methods=["POST"])
-def upload_endpoint():
-    """
-    POST form-data:
-      - audio (file)        OR
-      - youtubeUrl (string)
-      - title (optional)
-      - userId (optional)
-
-    Response:
-      { lectureId, status }
-    """
-    audio_file = request.files.get("audio")
-    youtube_url = request.form.get("youtubeUrl", "").strip()
-    title = request.form.get("title", "") or "Lecture"
+def upload():
     user_id = request.form.get("userId")
+    title = request.form.get("title", "Lecture").strip()
 
-    if not audio_file and not youtube_url:
-        return jsonify({"error": "no audio file or YouTube URL provided"}), 400
+    saved_path = None
 
-    # 1) Handle file upload
-    if audio_file:
-        if audio_file.filename == "" or not allowed_file(audio_file.filename):
-            return (
-                jsonify(
-                    {
-                        "error": "invalid file or extension; allowed: mp3,wav,m4a,mp4,ogg"
-                    }
-                ),
-                400,
-            )
-        try:
-            saved_path = save_uploaded_file(audio_file, UPLOAD_DIR)
-        except Exception as e:
-            return jsonify({"error": f"failed to save file: {e}"}), 500
+    # --- File upload ---
+    if "audio" in request.files:
+        f = request.files["audio"]
+        if not f.filename or not allowed_file(f.filename):
+            return jsonify({"error": "Invalid or missing audio file"}), 400
+        saved_path = save_uploaded_file(f, UPLOAD_DIR)
 
-    # 2) Handle YouTube URL
+    # --- YouTube URL ---
+    elif "youtubeUrl" in request.form:
+        youtube_url = request.form.get("youtubeUrl", "").strip()
+        if not youtube_url:
+            return jsonify({"error": "YouTube URL required"}), 400
+        saved_path = download_youtube_audio(youtube_url, UPLOAD_DIR)
+
     else:
-        try:
-            saved_path = download_youtube_audio(youtube_url, UPLOAD_DIR)
-        except Exception as e:
-            return jsonify({"error": f"failed to download YouTube audio: {e}"}), 500
+        return jsonify({"error": "No audio or YouTube URL provided"}), 400
 
+    # --- Create job ---
     lecture_id = uuid.uuid4().hex
     now = datetime.utcnow().isoformat() + "Z"
 
-    # stub job doc
-    job_doc = {
+    init_doc = {
         "lectureId": lecture_id,
         "title": title,
         "uploadedAt": now,
         "audioPath": str(saved_path),
         "status": "processing",
+        "progress": "Queued",
     }
-    out_file = RESULTS_DIR / f"{lecture_id}.json"
-    with open(out_file, "w", encoding="utf-8") as fh:
-        json.dump(job_doc, fh, ensure_ascii=False, indent=2)
 
-    # --- Processing pipeline ---
-    try:
-        # 1) Transcription
-        trans_result = transcribe_audio(saved_path)
-        full_text = trans_result.get("text", "")
-        segments = trans_result.get("segments", [])
+    with open(RESULTS_DIR / f"{lecture_id}.json", "w", encoding="utf-8") as f:
+        json.dump(init_doc, f, indent=2)
 
-        # 2) Summarization
-        short_summary = summarize_long_text(full_text)
+    threading.Thread(
+        target=process_lecture_background,
+        args=(lecture_id, title, saved_path, user_id),
+        daemon=True,
+    ).start()
 
-        # 3) Keywords
-        seg_texts = [s.get("text", "") for s in segments if s.get("text")]
-        keywords = extract_keywords_tfidf(seg_texts or [full_text], top_k=8)
+    return jsonify({
+        "lectureId": lecture_id,
+        "status": "processing"
+    }), 202
 
-        # 4) Questions (now 15 short-answer questions, no MCQs)
-        questions = generate_questions_ai(short_summary, how_many=15)
-
-        # Final doc
-        final_doc = {
-            "lectureId": lecture_id,
-            "title": title,
-            "uploadedAt": now,
-            "audioPath": str(saved_path),
-            "status": "done",
-            "transcript": segments,
-            "full_transcript": full_text,
-            "summary": {"short": short_summary},
-            "keywords": keywords,
-            "questions": questions,
-        }
-
-        # Save in MongoDB
-        lecture_doc = {
-            "lectureId": lecture_id,
-            "userId": user_id,
-            "title": title,
-            "uploadedAt": now,
-            "audioPath": str(saved_path),
-            "summary": final_doc["summary"],
-            "keywords": final_doc["keywords"],
-            "questions": final_doc["questions"],
-        }
-        lectures_col.insert_one(lecture_doc)
-
-        # Save full JSON to file
-        with open(out_file, "w", encoding="utf-8") as fh:
-            json.dump(final_doc, fh, ensure_ascii=False, indent=2)
-
-        return jsonify({"lectureId": lecture_id, "status": "done"}), 200
-
-    except Exception as e:
-        job_doc["status"] = "failed"
-        job_doc["error"] = str(e)
-        with open(out_file, "w", encoding="utf-8") as fh:
-            json.dump(job_doc, fh, ensure_ascii=False, indent=2)
-        return jsonify({"error": "processing failed", "details": str(e)}), 500
 
 
 @app.route("/result/<lecture_id>", methods=["GET"])
