@@ -519,6 +519,30 @@ def toggle_favorite(lecture_id):
 
     return jsonify({"ok": True, "isFavorite": is_fav}), 200
 
+@app.route("/api/lectures/<lecture_id>/rename", methods=["PATCH"])
+def rename_lecture(lecture_id):
+    data = request.get_json(force=True)
+    new_title = data.get("title", "").strip()
+
+    if not new_title:
+        return jsonify({"error": "Title required"}), 400
+
+    lectures_col.update_one(
+        {"lectureId": lecture_id},
+        {"$set": {"title": new_title}}
+    )
+
+    fp = RESULTS_DIR / f"{lecture_id}.json"
+    if fp.exists():
+        with open(fp, "r+", encoding="utf-8") as f:
+            doc = json.load(f)
+            doc["title"] = new_title
+            f.seek(0)
+            json.dump(doc, f, indent=2)
+            f.truncate()
+
+    return jsonify({"ok": True, "title": new_title}), 200
+
 # Helpers for ObjectId
 def looks_like_objectid(s):
     # naive check: 24 hex chars

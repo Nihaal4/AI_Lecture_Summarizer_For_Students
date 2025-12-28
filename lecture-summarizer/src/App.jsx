@@ -1058,6 +1058,9 @@ function HistoryDetailPage({ dark }) {
   const id = path.split("/").pop();
   const [doc, setDoc] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+
 
   useEffect(() => {
     setLoading(true);
@@ -1068,9 +1071,22 @@ function HistoryDetailPage({ dark }) {
       .finally(() => setLoading(false));
   }, [id]);
 
+  useEffect(() => {
+  if (doc?.title) setNewTitle(doc.title);
+}, [doc]);
   if (loading) return <div className={dark ? "text-sm text-slate-300" : "text-sm text-slate-500"}>Loading...</div>;
   if (!doc) return <div className={dark ? "text-sm text-slate-300" : "text-sm text-slate-500"}>Not found...</div>;
   const summaryText = doc.summary?.short || "";
+async function saveTitle() {
+  await fetch(`${API_BASE}/api/lectures/${id}/rename`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: newTitle }),
+  });
+  setDoc({ ...doc, title: newTitle });
+  setEditing(false);
+}
+
 
 const keyPointsArr = extractKeyPointsFromText(
   doc.summary?.short || doc.full_transcript || "",
@@ -1117,9 +1133,26 @@ ${questionsText}
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-  <h3 className={dark ? "text-lg font-semibold text-white" : "text-lg font-semibold text-slate-900"}>
+        {editing ? (
+  <div className="flex gap-2">
+    <input
+      value={newTitle}
+      onChange={(e) => setNewTitle(e.target.value)}
+      className="px-2 py-1 border rounded text-sm"
+    />
+    <button onClick={saveTitle} className="text-sm text-indigo-600">Save</button>
+    <button onClick={() => setEditing(false)} className="text-sm">Cancel</button>
+  </div>
+) : (
+  <h3
+    onDoubleClick={() => setEditing(true)}
+    className="cursor-pointer"
+    title="Double click to rename"
+  >
     {doc.title}
   </h3>
+)}
+
 
   <div className="flex gap-2">
     <button
