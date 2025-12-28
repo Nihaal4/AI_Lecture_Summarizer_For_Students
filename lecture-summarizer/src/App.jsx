@@ -1135,22 +1135,37 @@ ${questionsText}
       <div className="flex items-center justify-between mb-3">
         {editing ? (
   <div className="flex gap-2">
-    <input
-      value={newTitle}
-      onChange={(e) => setNewTitle(e.target.value)}
-      className="px-2 py-1 border rounded text-sm"
-    />
+<input
+  value={newTitle}
+  onChange={(e) => setNewTitle(e.target.value)}
+  className={`px-2 py-1 border rounded text-sm w-64 ${
+    dark
+      ? "bg-slate-700 text-white border-slate-600 placeholder-slate-400"
+      : "bg-white text-slate-900 border-slate-300"
+  }`}
+/>
+
     <button onClick={saveTitle} className="text-sm text-indigo-600">Save</button>
     <button onClick={() => setEditing(false)} className="text-sm">Cancel</button>
   </div>
 ) : (
-  <h3
-    onDoubleClick={() => setEditing(true)}
-    className="cursor-pointer"
-    title="Double click to rename"
-  >
+<div
+  className="flex items-center gap-2 cursor-pointer"
+  onDoubleClick={() => setEditing(true)}
+  title="Double click to rename"
+>
+  <h3 className={dark ? "text-white" : "text-slate-900"}>
     {doc.title}
   </h3>
+  <span
+    onClick={() => setEditing(true)}
+    className={dark ? "text-slate-400 hover:text-white" : "text-slate-500 hover:text-slate-900"}
+    title="Rename title"
+  >
+    ✏️
+  </span>
+</div>
+
 )}
 
 
