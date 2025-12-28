@@ -20,6 +20,15 @@ const AUTH_KEY = "ls_auth_user";
 const DARK_KEY = "ls_dark_mode";
 const API_BASE = "http://127.0.0.1:5000"; // Flask backend
 // ---------- Export helpers ----------
+
+function safeFileName(name) {
+  if (!name) return "lecture_notes";
+  return name
+    .replace(/[\\/:*?"<>|]+/g, "") // remove invalid chars
+    .replace(/\s+/g, "_")          // spaces → _
+    .trim();
+}
+
 function copyToClipboard(text) {
   if (!text) {
     alert("Nothing to copy");
@@ -773,19 +782,26 @@ ${questionsText}
     Copy
   </button>
 
-  <button
-    onClick={() => downloadTxt("lecture-notes.txt", exportText)}
-    className="px-3 py-1 rounded border text-sm"
-  >
-    TXT
-  </button>
+<button
+  onClick={() => {
+    const baseName = safeFileName(result.title);
+    downloadTxt(`${baseName}.txt`, exportText);
+  }}
+  className="px-3 py-1 rounded border text-sm"
+>
+  TXT
+</button>
 
-  <button
-    onClick={() => downloadPdf("lecture-notes.pdf", exportText)}
-    className="px-3 py-1 rounded border text-sm"
-  >
-    PDF
-  </button>
+<button
+  onClick={() => {
+    const baseName = safeFileName(result.title);
+    downloadPdf(`${baseName}.pdf`, exportText);
+  }}
+  className="px-3 py-1 rounded border text-sm"
+>
+  PDF
+</button>
+
 </div>
 
 
@@ -1045,19 +1061,27 @@ ${questionsText}
       Copy
     </button>
 
-    <button
-      onClick={() => downloadTxt("lecture-notes.txt", exportText)}
-      className="px-3 py-1 rounded border text-sm"
-    >
-      TXT
-    </button>
+<button
+  onClick={() => {
+    const baseName = safeFileName(doc.title);
+    downloadTxt(`${baseName}.txt`, exportText);
+  }}
+  className="px-3 py-1 rounded border text-sm"
+>
+  TXT
+</button>
 
-    <button
-      onClick={() => downloadPdf("lecture-notes.pdf", exportText)}
-      className="px-3 py-1 rounded border text-sm"
-    >
-      PDF
-    </button>
+<button
+  onClick={() => {
+    const baseName = safeFileName(doc.title);
+    downloadPdf(`${baseName}.pdf`, exportText);
+  }}
+  className="px-3 py-1 rounded border text-sm"
+>
+  PDF
+</button>
+
+
   </div>
 </div>
 
