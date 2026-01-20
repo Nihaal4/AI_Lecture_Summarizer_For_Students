@@ -3,7 +3,7 @@
    -> No component reads getDarkMode() on its own; every component uses the `dark` prop.
    This guarantees immediate re-render on toggle.
 */
-
+import { Download } from "lucide-react";
 import React, { useState, useEffect } from "react";
 import {
   BrowserRouter as Router,
@@ -1035,6 +1035,17 @@ function HistoryPage({ dark }) {
   >
     Open
   </Link>
+  <a
+  href={`${API_BASE}/download_audio/${it.lectureId}`}
+  target="_blank"
+  rel="noopener noreferrer"
+  className={dark ? "text-emerald-300 text-sm" : "text-emerald-600 text-sm"}
+  title="Download original audio"
+>
+  <Download className="w-4 h-4 inline-block mr-1" />
+  Audio
+</a>
+
 
   {/* Delete */}
   <button
@@ -1135,6 +1146,8 @@ ${questionsText}
       <div className="flex items-center justify-between mb-3">
         {editing ? (
   <div className="flex gap-2">
+
+
 <input
   value={newTitle}
   onChange={(e) => setNewTitle(e.target.value)}
@@ -1170,6 +1183,14 @@ ${questionsText}
 
 
   <div className="flex gap-2">
+        <a
+  href={`${API_BASE}/download_audio/${id}`}
+  target="_blank"
+  rel="noopener noreferrer"
+  className="px-3 py-1 rounded border text-sm"
+>
+  🎧 Audio
+</a>
     <button
       onClick={() => copyToClipboard(exportText)}
       className="px-3 py-1 rounded bg-indigo-600 text-white text-sm"
