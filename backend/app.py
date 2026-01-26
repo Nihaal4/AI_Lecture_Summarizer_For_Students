@@ -12,6 +12,7 @@ Endpoints:
  - GET  /download_audio/<id> -> download original audio
  - GET  /api/user/<id>/stats -> returns user stats (count, total_words, joined)
 """
+from queue import Queue
 import threading
 import os
 import uuid
@@ -51,6 +52,14 @@ groq_client = Groq()  # expects GROQ_API_KEY in your environment
 UPLOAD_DIR = Path("uploads")
 RESULTS_DIR = Path("results")
 ALLOWED_EXT = {"mp3", "wav", "m4a", "mp4", "ogg"}
+job_queue = Queue()  # unlimited queue
+MAX_WORKERS = 3
+ # allow only 3 concurrent jobs
+from time import time
+
+LECTURE_CACHE = {}
+CACHE_TTL = 15  # seconds
+
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -82,10 +91,25 @@ summarizer = pipeline(
     device=-1,  # CPU; change if GPU available
 )
 
+def invalidate_lecture_cache(user_id):
+    if user_id:
+        LECTURE_CACHE.pop(f"lectures:{user_id}", None)
+
+
+def worker():
+    while True:
+        args = job_queue.get()
+        if args is None:
+            break
+        process_lecture_background(*args)
+        job_queue.task_done()
+
 # ---------- Flask app ----------
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 600 * 1024 * 1024  # 600 MB
 CORS(app, resources={r"/*": {"origins": "*"}})
+for _ in range(MAX_WORKERS):
+    threading.Thread(target=worker, daemon=True).start()
 
 
 # ---------- Utility functions ----------
@@ -150,6 +174,8 @@ def process_lecture_background(
     "questions": questions,
     "isFavorite": False,   # ⭐ ADD THIS
 })
+        invalidate_lecture_cache(user_id)
+
 
 
         with open(RESULTS_DIR / f"{lecture_id}.json", "w", encoding="utf-8") as f:
@@ -436,23 +462,40 @@ def api_lectures():
     Otherwise return all (for admin/testing).
     """
     user_id = request.args.get("userId")
-    query = {}
-    if user_id:
-        query["userId"] = user_id
+    cache_key = f"lectures:{user_id}" if user_id else None
 
-    cursor = lectures_col.find(query).sort("uploadedAt", -1)
-    items = []
-    for doc in cursor:
-        items.append(
-            {
-                "lectureId": doc.get("lectureId"),
-                "title": doc.get("title"),
-                "uploadedAt": doc.get("uploadedAt"),
-                "isFavorite": doc.get("isFavorite", False),
-            }
-        )
+
+    now = time()
+    if cache_key:
+        cached = LECTURE_CACHE.get(cache_key)
+        if cached and now - cached["time"] < CACHE_TTL:
+            return jsonify(cached["data"]), 200
+
+
+    query = {"userId": user_id} if user_id else {}
+
+    cursor = lectures_col.find(
+        query,
+        {
+            "_id": 0,
+            "lectureId": 1,
+            "title": 1,
+            "uploadedAt": 1,
+            "isFavorite": 1,
+        }
+    ).sort("uploadedAt", -1)
+
+    items = list(cursor)
+
+    if cache_key:
+        LECTURE_CACHE[cache_key] = {
+            "time": now,
+            "data": items
+        }
+
 
     return jsonify(items), 200
+
 
 
 @app.route("/api/lectures/<lecture_id>", methods=["DELETE"])
@@ -463,6 +506,7 @@ def api_delete_lecture(lecture_id):
     doc = lectures_col.find_one({"lectureId": lecture_id})
     # remove DB doc if present
     result = lectures_col.delete_one({"lectureId": lecture_id})
+    invalidate_lecture_cache(doc.get("userId"))
     # remove results JSON file
     fp = RESULTS_DIR / f"{lecture_id}.json"
     try:
@@ -535,6 +579,10 @@ def toggle_favorite(lecture_id):
         {"$set": {"isFavorite": is_fav}}
     )
 
+    doc = lectures_col.find_one({"lectureId": lecture_id})
+    invalidate_lecture_cache(doc.get("userId"))
+
+
     if res.matched_count == 0:
         return jsonify({"error": "Lecture not found"}), 404
 
@@ -577,6 +625,8 @@ def uuid_to_objectid(s):
         return ObjectId(s)
     except Exception:
         return s
+
+
 
 
 # ---------- Main processing endpoints ----------
@@ -622,12 +672,14 @@ def upload():
 
     with open(RESULTS_DIR / f"{lecture_id}.json", "w", encoding="utf-8") as f:
         json.dump(init_doc, f, indent=2)
+    try:
+        job_queue.put(
+            (lecture_id, title, saved_path, user_id, summary_length),
+            timeout=5
+        )
+    except:
+        return jsonify({"error": "Server busy. Try again later."}), 503
 
-    threading.Thread(
-        target=process_lecture_background,
-        args=(lecture_id, title, saved_path, user_id, summary_length),
-        daemon=True,
-    ).start()
 
     return jsonify({
         "lectureId": lecture_id,

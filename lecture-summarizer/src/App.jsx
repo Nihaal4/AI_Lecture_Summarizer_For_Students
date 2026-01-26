@@ -4,7 +4,7 @@
    This guarantees immediate re-render on toggle.
 */
 import { Download } from "lucide-react";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -12,6 +12,7 @@ import {
   Link,
   useNavigate,
   Navigate,
+  useParams
 } from "react-router-dom";
 // import { Bell, LogOut, Home, FileText, Clock, User, Sun, Moon, Trash2, Search, SortAsc, SortDesc } from "lucide-react";
 import { Bell, LogOut, Home, FileText, Clock, User, Sun, Moon, Trash2, Search, SortAsc, SortDesc, Star } from "lucide-react";
@@ -301,6 +302,19 @@ function PrivateRoute({ children }) {
 
 // ---------- Pages ----------
 // Note: all pages below accept a `dark` prop — they no longer call getDarkMode()
+function HistorySkeleton({ dark }) {
+  return (
+    <div className="space-y-3">
+      {[1,2,3].map(i => (
+        <div key={i}
+          className={`h-16 rounded animate-pulse ${
+            dark ? "bg-slate-700" : "bg-slate-200"
+          }`}
+        />
+      ))}
+    </div>
+  );
+}
 
 function SignupPage({ dark }) {
   const [name, setName] = useState("");
@@ -517,6 +531,8 @@ function Card({ title, desc, linkTo, dark }) {
 
 // ---------- Summarize Page (with progress bar + file/YT toggle) ----------
 function SummarizePage({ dark }) {
+  const [studyMode, setStudyMode] = useState(true);
+  const [pollInterval, setPollInterval] = useState(2000);
   const [mode, setMode] = useState("file"); // "file" | "youtube"
   const [file, setFile] = useState(null);
   const [youtubeUrl, setYoutubeUrl] = useState("");
@@ -525,13 +541,23 @@ function SummarizePage({ dark }) {
   const [status, setStatus] = useState(null);
   const [result, setResult] = useState(null);
   const [lectureId, setLectureId] = useState(null);
-
-
-
   const [isProcessing, setIsProcessing] = useState(false);
   const [viewKeyPoints, setViewKeyPoints] = useState(false);
+    const progressMap = {
+    "Queued": 10,
+    "Uploading...": 15,
+    "Transcribing audio": 30,
+    "Summarizing lecture": 60,
+    "Extracting keywords": 80,
+    "Generating questions": 90,
+    "Completed": 100,
+  };
+
+  const progressValue = Math.max(progressMap[status] || 10, 10);
+
 
 const submit = async (e) => {
+  setPollInterval(2000);
   e.preventDefault();
   setStatus("");
   setResult(null);
@@ -576,6 +602,7 @@ fd.append("title", title.trim());
 
     // ✅ THIS IS THE KEY LINE
     setLectureId(j.lectureId);
+    localStorage.setItem("ls_active_lecture", j.lectureId);
     setStatus("Processing started...");
 
   } catch (err) {
@@ -583,6 +610,7 @@ fd.append("title", title.trim());
     setIsProcessing(false);
   }
 };
+
 
   useEffect(() => {
   if (!lectureId) return;
@@ -592,22 +620,34 @@ fd.append("title", title.trim());
       const res = await fetch(`${API_BASE}/result/${lectureId}`);
       const data = await res.json();
 
-      // Show real backend progress
       setStatus(data.progress || data.status);
 
       if (data.status === "done" || data.progress?.startsWith("Failed")) {
+        localStorage.removeItem("ls_active_lecture");
         setResult(data);
         setIsProcessing(false);
         clearInterval(poller);
+      } else {
+        // slow down polling after transcription
+        if (data.progress === "Summarizing lecture") {
+          setPollInterval(3500);
+        }
       }
-    } catch (e) {
+    } catch {
       setStatus("Error while fetching progress");
     }
-  }, 2000);
+  }, pollInterval);
 
   return () => clearInterval(poller);
-}, [lectureId]);
-
+}, [lectureId, pollInterval]);
+useEffect(() => {
+  const active = localStorage.getItem("ls_active_lecture");
+  if (active && !lectureId) {
+    setLectureId(active);
+    setIsProcessing(true);
+    setStatus("Resuming previous task...");
+  }
+}, []);
 
   return (
     <div className={dark ? "bg-slate-800 p-6 rounded-lg border border-slate-700 text-white" : "bg-white p-6 rounded-lg border border-slate-200 text-slate-900"}>
@@ -737,16 +777,26 @@ fd.append("title", title.trim());
 
           {/* Progress bar */}
           {isProcessing && (
-            <div className="w-full">
-              <div className={dark ? "w-full h-2 rounded bg-slate-700 overflow-hidden" : "w-full h-2 rounded bg-slate-200 overflow-hidden"}>
-                <div className="h-2 rounded bg-indigo-500 w-1/2" />
-              </div>
-              <div className={dark ? "text-xs mt-1 text-slate-300" : "text-xs mt-1 text-slate-500"}>
-Processing step: {status}
+  <div className="w-full">
+    <div
+      className={
+        dark
+          ? "w-full h-2 rounded bg-slate-700 overflow-hidden"
+          : "w-full h-2 rounded bg-slate-200 overflow-hidden"
+      }
+    >
+      <div
+        className="h-2 rounded bg-indigo-500 transition-all duration-500"
+        style={{ width: `${progressValue}%` }}
+      />
+    </div>
 
-              </div>
-            </div>
-          )}
+    <div className={dark ? "text-xs mt-1 text-slate-300" : "text-xs mt-1 text-slate-500"}>
+      Processing step: {status}
+    </div>
+  </div>
+)}
+
         </div>
       </form>
 
@@ -883,7 +933,16 @@ ${questionsText}
           {/* Predicted questions */}
           {result.questions && result.questions.length > 0 && (
             <div className={dark ? "col-span-2 bg-slate-800 p-4 rounded border border-slate-700 text-white" : "col-span-2 bg-white p-4 rounded border border-slate-200 text-slate-900"}>
-              <h4 className="font-medium">Predicted practice questions</h4>
+              <div className="flex items-center justify-between">
+  <h4 className="font-medium">Predicted practice questions</h4>
+  <button
+    onClick={() => setStudyMode(v => !v)}
+    className="text-xs px-3 py-1 rounded bg-indigo-600 text-white"
+  >
+    {studyMode ? "Reveal answers" : "Hide answers"}
+  </button>
+</div>
+
               <div className="mt-3 space-y-4">
                 {result.questions.map((q, idx) => (
                   <div key={idx} className="text-sm">
@@ -891,11 +950,12 @@ ${questionsText}
                       Q{idx + 1}. {q.question}
                     </div>
 
-                    {q.answer && (
-                      <div className={dark ? "mt-1 text-xs text-emerald-300" : "mt-1 text-xs text-emerald-700"}>
-                        <span className="font-semibold">Answer:</span> {q.answer}
-                      </div>
-                    )}
+                    {!studyMode && q.answer && (
+  <div className={dark ? "mt-1 text-xs text-emerald-300" : "mt-1 text-xs text-emerald-700"}>
+    <span className="font-semibold">Answer:</span> {q.answer}
+  </div>
+)}
+
                   </div>
                 ))}
               </div>
@@ -918,7 +978,7 @@ function HistoryPage({ dark }) {
 
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("newest"); // newest, oldest, title
-  const [filtered, setFiltered] = useState([]);
+  // const [filtered, setFiltered] = useState([]);
 
   useEffect(() => {
     if (!user?.id) {
@@ -944,26 +1004,32 @@ function HistoryPage({ dark }) {
       });
   }, [user]);
 
-  useEffect(() => {
-    // filter & sort client-side
-    let arr = [...items];
-    if (showFavorites) {
-  arr = arr.filter(it => it.isFavorite);
-}
+const filtered = useMemo(() => {
+  let arr = [...items];
 
-    if (search.trim()) {
-      const s = search.trim().toLowerCase();
-      arr = arr.filter((it) => (it.title || "").toLowerCase().includes(s) || (it.lectureId || "").includes(s));
-    }
-    if (sort === "newest") {
-      arr.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
-    } else if (sort === "oldest") {
-      arr.sort((a, b) => new Date(a.uploadedAt) - new Date(b.uploadedAt));
-    } else if (sort === "title") {
-      arr.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
-    }
-    setFiltered(arr);
-  }, [items, search, sort, showFavorites]);
+  if (showFavorites) {
+    arr = arr.filter(it => it.isFavorite);
+  }
+
+  if (search.trim()) {
+    const s = search.toLowerCase();
+    arr = arr.filter(it =>
+      (it.title || "").toLowerCase().includes(s) ||
+      (it.lectureId || "").includes(s)
+    );
+  }
+
+  if (sort === "newest") {
+    arr.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt));
+  } else if (sort === "oldest") {
+    arr.sort((a, b) => new Date(a.uploadedAt) - new Date(b.uploadedAt));
+  } else if (sort === "title") {
+    arr.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+  }
+
+  return arr;
+}, [items, search, sort, showFavorites]);
+
 
   async function handleDelete(lectureId) {
     if (!window.confirm("Delete this summary permanently?")) return;
@@ -1031,7 +1097,16 @@ function HistoryPage({ dark }) {
         </div>
       </div>
 
-      {status && <div className={dark ? "text-sm text-slate-300" : "text-sm text-slate-500"}>{status}</div>}
+      {status && (
+  <>
+    <HistorySkeleton dark={dark} />
+    <div className={dark ? "text-slate-300 animate-pulse" : "text-slate-500 animate-pulse"}>
+      {status}
+    </div>
+  </>
+)}
+
+
       {!status && showFavorites && filtered.length === 0 && (
   <div className={dark ? "text-sm text-slate-300" : "text-sm text-slate-500"}>
     ⭐ Please add favorites first
@@ -1105,8 +1180,7 @@ function HistoryPage({ dark }) {
 }
 
 function HistoryDetailPage({ dark }) {
-  const path = window.location.pathname;
-  const id = path.split("/").pop();
+  const { id } = useParams();
   const [doc, setDoc] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
@@ -1386,7 +1460,6 @@ export default function App() {
 
   useEffect(() => {
     setDarkMode(dark);
-    setDarkState(dark);
   }, [dark]);
 
   return (
