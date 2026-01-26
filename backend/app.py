@@ -30,7 +30,7 @@ from groq import Groq
 from yt_dlp import YoutubeDL
 
 # ML libs
-import whisper
+from faster_whisper import WhisperModel
 from transformers import pipeline
 from sklearn.feature_extraction.text import TfidfVectorizer
 
@@ -64,8 +64,15 @@ users_col = db["users"]
 lectures_col = db["lectures"]
 
 # ---------- Load ML models ----------
-print("Loading Whisper model (this may take a while on first run)...")
-whisper_model = whisper.load_model("small")
+print("Loading faster-whisper model...")
+whisper_model = WhisperModel(
+    "small",
+    device="cpu",
+    compute_type="int8"
+)
+
+# print("Loading Whisper model (this may take a while on first run)...")
+# whisper_model = whisper.load_model("small")
 
 print("Loading summarizer (T5-small)...")
 summarizer = pipeline(
@@ -190,11 +197,25 @@ def download_youtube_audio(youtube_url: str, dest_dir: Path) -> Path:
 
 
 def transcribe_audio(path: str) -> dict:
-    """
-    Run whisper transcription. Returns the raw whisper result (text + segments).
-    """
-    result = whisper_model.transcribe(str(path))
-    return result  # keys: text, segments, language, etc.
+    segments, info = whisper_model.transcribe(str(path))
+
+    full_text = ""
+    segs = []
+
+    for seg in segments:
+        full_text += seg.text + " "
+        segs.append({
+            "start": seg.start,
+            "end": seg.end,
+            "text": seg.text
+        })
+
+    return {
+        "text": full_text.strip(),
+        "segments": segs,
+        "language": info.language
+    }
+
 
 
 def chunk_text_by_sentences(text: str, max_sentences_per_chunk: int = 40) -> List[str]:
@@ -635,7 +656,16 @@ def download_audio(lecture_id):
     audio_path = doc.get("audioPath")
     if not audio_path or not os.path.exists(audio_path):
         return jsonify({"error": "audio not found"}), 404
-    return send_file(audio_path, as_attachment=True)
+    from pathlib import Path
+
+    filename = f"{doc.get('title', 'lecture')}{Path(audio_path).suffix}"
+
+    return send_file(
+        audio_path,
+        as_attachment=True,
+        download_name=filename
+    )
+
 
 
 # ---------- Run ----------

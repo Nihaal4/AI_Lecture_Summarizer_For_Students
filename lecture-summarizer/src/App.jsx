@@ -61,12 +61,30 @@ async function downloadPdf(filename, content) {
     alert("Nothing to download");
     return;
   }
+
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF();
-  const lines = doc.splitTextToSize(content, 180);
-  doc.text(lines, 10, 10);
+
+  const marginLeft = 10;
+  const marginTop = 10;
+  const pageWidth = 190;
+  const pageHeight = 280;
+
+  const lines = doc.splitTextToSize(content, pageWidth);
+  let y = marginTop;
+
+  lines.forEach(line => {
+    if (y > pageHeight) {
+      doc.addPage();
+      y = marginTop;
+    }
+    doc.text(line, marginLeft, y);
+    y += 7; // line spacing
+  });
+
   doc.save(filename);
 }
+
 
 
 // ---------- Auth helpers (talk to Flask + MongoDB) ----------
@@ -664,12 +682,34 @@ fd.append("title", title.trim());
         {mode === "file" ? (
           <div>
             <label className={dark ? "block text-sm text-slate-300" : "block text-sm text-slate-600"}>Audio file</label>
-            <input
-              type="file"
-              accept="audio/*"
-              onChange={(e) => setFile(e.target.files[0])}
-              className="mt-1 w-full"
-            />
+<div className="mt-1">
+  <input
+    type="file"
+    id="audio-upload"
+    accept="audio/*"
+    onChange={(e) => setFile(e.target.files[0])}
+    className="hidden"
+  />
+
+  <label
+    htmlFor="audio-upload"
+    className={`inline-flex items-center gap-2 px-4 py-2 rounded cursor-pointer text-sm font-medium
+      ${
+        dark
+          ? "bg-slate-700 text-white hover:bg-slate-600"
+          : "bg-slate-100 text-slate-800 hover:bg-slate-200"
+      }`}
+  >
+    📁 Upload audio
+  </label>
+
+  {file && (
+    <div className={dark ? "mt-2 text-xs text-slate-300" : "mt-2 text-xs text-slate-500"}>
+      Selected: <span className="font-medium">{file.name}</span>
+    </div>
+  )}
+</div>
+
           </div>
         ) : (
           <div>
