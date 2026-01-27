@@ -74,11 +74,18 @@ lectures_col = db["lectures"]
 
 # ---------- Load ML models ----------
 print("Loading faster-whisper model...")
+import os
+
+CPU_THREADS = max(2, os.cpu_count() // 2)
+
 whisper_model = WhisperModel(
     "small",
     device="cpu",
-    compute_type="int8"
+    compute_type="int8",
+    cpu_threads=CPU_THREADS,
+    num_workers=2
 )
+
 
 # print("Loading Whisper model (this may take a while on first run)...")
 # whisper_model = whisper.load_model("small")
@@ -134,8 +141,12 @@ def process_lecture_background(
     summary_length: str
 ):
     try:
+        update_progress(lecture_id, "Preparing audio")
+        norm_audio = normalize_audio(saved_path)
+
         update_progress(lecture_id, "Transcribing audio")
-        trans = transcribe_audio(saved_path)
+        trans = transcribe_audio(norm_audio)
+
         full_text = trans.get("text", "")
         segments = trans.get("segments", [])
 
@@ -183,6 +194,13 @@ def process_lecture_background(
 
     except Exception as e:
         update_progress(lecture_id, f"Failed: {str(e)}")
+    # cleanup normalized audio
+    try:
+        if norm_audio.exists():
+            norm_audio.unlink()
+    except Exception:
+        pass
+
 
 def allowed_file(filename: str) -> bool:
     return (
@@ -221,23 +239,42 @@ def download_youtube_audio(youtube_url: str, dest_dir: Path) -> Path:
         audio_path = dest_dir / f"{info['id']}.mp3"
         return audio_path
 
+def normalize_audio(input_path: Path) -> Path:
+    output_path = input_path.with_suffix(".wav")
+
+    cmd = f'ffmpeg -y -i "{input_path}" -ac 1 -ar 16000 "{output_path}"'
+    if os.system(cmd) != 0:
+        raise RuntimeError("FFmpeg failed to normalize audio")
+
+    return output_path
+
 
 def transcribe_audio(path: str) -> dict:
-    segments, info = whisper_model.transcribe(str(path))
+    segments, info = whisper_model.transcribe(
+        str(path),
+        language="en",
+        beam_size=5,
+        vad_filter=True,
+        vad_parameters=dict(min_silence_duration_ms=500),
+        condition_on_previous_text=False
+    )
 
-    full_text = ""
+    full_text = []
     segs = []
 
     for seg in segments:
-        full_text += seg.text + " "
+        txt = seg.text.strip()
+        if not txt:
+            continue
+        full_text.append(txt)
         segs.append({
-            "start": seg.start,
-            "end": seg.end,
-            "text": seg.text
+            "start": round(seg.start, 2),
+            "end": round(seg.end, 2),
+            "text": txt
         })
 
     return {
-        "text": full_text.strip(),
+        "text": " ".join(full_text),
         "segments": segs,
         "language": info.language
     }

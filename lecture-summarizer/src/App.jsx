@@ -12,7 +12,8 @@ import {
   Link,
   useNavigate,
   Navigate,
-  useParams
+  useParams,
+  useLocation
 } from "react-router-dom";
 // import { Bell, LogOut, Home, FileText, Clock, User, Sun, Moon, Trash2, Search, SortAsc, SortDesc } from "lucide-react";
 import { Bell, LogOut, Home, FileText, Clock, User, Sun, Moon, Trash2, Search, SortAsc, SortDesc, Star } from "lucide-react";
@@ -136,6 +137,20 @@ function getDarkMode() {
 function setDarkMode(val) {
   localStorage.setItem(DARK_KEY, val ? "true" : "false");
 }
+function Surface({ dark, children, className = "" }) {
+  return (
+    <div
+      className={`rounded-xl p-5 transition ${
+        dark
+          ? "bg-slate-800/80 ring-1 ring-white/10"
+          : "bg-white ring-1 ring-black/5"
+      } ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
+
 
 // ---------- Utility (frontend) ----------
 function formatDateISO(iso) {
@@ -146,23 +161,35 @@ function formatDateISO(iso) {
   }
 }
 
-function highlightText(text = "", keywords = []) {
-  if (!text) return text;
-  if (!keywords || keywords.length === 0) return text;
+function escapeHtml(text) {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
 
-  // sort keywords by length desc to avoid partial overlaps
-  const sorted = [...keywords].sort((a, b) => b.length - a.length);
-  // escape for regex
-  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function highlightText(text, keywords = []) {
+  if (!text) return "";
 
-  let out = text;
-  sorted.forEach((k) => {
-    const re = new RegExp(`(${esc(k)})`, "gi");
-    out = out.replace(re, "<mark class='px-1 py-0 rounded bg-yellow-200 dark:bg-yellow-600 text-black dark:text-white'>$1</mark>");
+  let safeText = escapeHtml(text);
+
+  if (!keywords.length) return safeText;
+
+  keywords.forEach((kw) => {
+    if (!kw) return;
+
+    const regex = new RegExp(`\\b(${kw})\\b`, "gi");
+
+    safeText = safeText.replace(
+      regex,
+      `<span class="px-1 rounded bg-yellow-200 dark:bg-yellow-600 text-black dark:text-white">$1</span>`
+    );
   });
 
-  return out;
+  return safeText;
 }
+
+
 
 function extractKeyPointsFromText(text = "", keywords = [], maxPoints = 6) {
   if (!text) return [];
@@ -206,31 +233,33 @@ function Brand({ compact = false, dark }) {
 }
 
 function NavItem({ to, icon: Icon, label, dark }) {
+  const location = useLocation();
+  const isActive = location.pathname === to;
+
   return (
     <Link
       to={to}
-      className={
-        dark
-          ? "flex items-center gap-3 px-3 py-2 rounded transition-colors hover:bg-slate-700"
-          : "flex items-center gap-3 px-3 py-2 rounded transition-colors hover:bg-slate-100 hover:text-slate-900"
-      }
+      className={`flex items-center gap-3 px-3 py-2 rounded-lg transition
+        ${
+          isActive
+            ? dark
+              ? "bg-indigo-600 text-white"
+              : "bg-indigo-50 text-indigo-700"
+            : dark
+            ? "hover:bg-slate-700 text-slate-300"
+            : "hover:bg-slate-100 text-slate-700"
+        }`}
     >
       <Icon
-        className={
-          dark
-            ? "w-5 h-5 text-slate-300"
-            : "w-5 h-5 text-slate-600"
-        }
+        className={`w-5 h-5 ${
+          isActive
+            ? "text-current"
+            : dark
+            ? "text-slate-400"
+            : "text-slate-500"
+        }`}
       />
-      <span
-        className={
-          dark
-            ? "text-sm text-white"
-            : "text-sm text-slate-700"
-        }
-      >
-        {label}
-      </span>
+      <span className="text-sm font-medium">{label}</span>
     </Link>
   );
 }
@@ -239,11 +268,20 @@ function NavItem({ to, icon: Icon, label, dark }) {
 function Layout({ children, onToggleDark, dark }) {
   const navigate = useNavigate();
   const user = getCurrentUser();
+
   return (
-    <div className={`min-h-screen text-base md:text-xl ${dark ? "bg-slate-900 text-white" : "bg-white text-slate-800"}`}>
-      <div className="max-w-6xl mx-auto p-6 grid grid-cols-12 gap-6">
-        <aside className={dark ? "col-span-3 bg-slate-800 rounded-2xl p-4 border border-slate-700 text-white" : "col-span-3 bg-white rounded-2xl p-4 border border-slate-200 text-slate-900"}>
-          <div className="mb-6">
+    <div className={dark ? "min-h-screen bg-slate-900 text-white" : "min-h-screen bg-slate-50 text-slate-800"}>
+      <div className="max-w-7xl mx-auto px-6 py-6 grid grid-cols-12 gap-6">
+
+        {/* Sidebar */}
+        <aside
+          className={
+            dark
+              ? "col-span-3 bg-slate-800 rounded-2xl p-5 border border-slate-700 shadow-lg"
+              : "col-span-3 bg-white rounded-2xl p-5 border border-slate-200 shadow-sm"
+          }
+        >
+          <div className="mb-8">
             <Brand dark={dark} />
           </div>
 
@@ -254,44 +292,76 @@ function Layout({ children, onToggleDark, dark }) {
             <NavItem to="/profile" icon={User} label="Profile" dark={dark} />
           </nav>
 
-          <div className={`mt-6 border-t pt-4 ${dark ? "border-slate-700" : "border-slate-200"}`}>
+          <div className={`mt-10 pt-4 border-t ${dark ? "border-slate-700" : "border-slate-200"}`}>
             <button
               onClick={() => {
                 logout();
                 navigate("/login");
               }}
-              className={dark ? "w-full flex items-center gap-2 px-3 py-2 rounded-md bg-red-800 text-red-200 hover:bg-red-700" : "w-full flex items-center gap-2 px-3 py-2 rounded-md bg-red-50 text-red-600 hover:bg-red-100"}
+              className={
+                dark
+                  ? "w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-red-900/40 text-red-200 hover:bg-red-900/60 transition"
+                  : "w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition"
+              }
             >
-              <LogOut className="w-4 h-4" /> Logout
+              <LogOut className="w-4 h-4" />
+              Logout
             </button>
           </div>
         </aside>
 
+        {/* Main content */}
         <main className="col-span-9">
-          <div className="flex items-center justify-between mb-6">
-            <div className={dark ? "text-2xl font-semibold text-white" : "text-2xl font-semibold text-slate-900"}>
-              Welcome, <span className="capitalize">{user?.name || "Student"}</span>
+          {/* Top bar */}
+          <div
+            className={
+              dark
+                ? "flex items-center justify-between mb-6 bg-slate-800 border border-slate-700 rounded-2xl px-6 py-4"
+                : "flex items-center justify-between mb-6 bg-white border border-slate-200 rounded-2xl px-6 py-4 shadow-sm"
+            }
+          >
+            <div>
+              <div className={dark ? "text-xs text-slate-400" : "text-xs text-slate-500"}>
+                Welcome back
+              </div>
+              <div className={dark ? "text-xl font-semibold text-white" : "text-xl font-semibold text-slate-900"}>
+                {user?.name || "Student"}
+              </div>
             </div>
+
             <div className="flex items-center gap-4">
-              <Bell className={dark ? "w-5 h-5 text-slate-300" : "w-5 h-5 text-slate-500"} />
-              <div className={dark ? "text-sm text-slate-300" : "text-sm text-slate-600"}>{user?.email}</div>
+              <Bell className={dark ? "w-5 h-5 text-slate-400" : "w-5 h-5 text-slate-500"} />
+
+              <div className={dark ? "text-sm text-slate-400" : "text-sm text-slate-600"}>
+                {user?.email}
+              </div>
 
               <button
                 title="Toggle dark mode"
                 onClick={() => onToggleDark(!dark)}
-                className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700"
+                className={
+                  dark
+                    ? "p-2 rounded-full hover:bg-slate-700 transition"
+                    : "p-2 rounded-full hover:bg-slate-100 transition"
+                }
               >
-                {dark ? <Sun className="w-4 h-4 text-yellow-400" /> : <Moon className="w-4 h-4" />}
+                {dark ? (
+                  <Sun className="w-4 h-4 text-yellow-400" />
+                ) : (
+                  <Moon className="w-4 h-4 text-slate-700" />
+                )}
               </button>
             </div>
           </div>
 
+          {/* Page content */}
           <div>{children}</div>
         </main>
       </div>
     </div>
   );
 }
+
 
 // ---------- Route Guard ----------
 function PrivateRoute({ children }) {
@@ -304,17 +374,24 @@ function PrivateRoute({ children }) {
 // Note: all pages below accept a `dark` prop — they no longer call getDarkMode()
 function HistorySkeleton({ dark }) {
   return (
-    <div className="space-y-3">
-      {[1,2,3].map(i => (
-        <div key={i}
-          className={`h-16 rounded animate-pulse ${
-            dark ? "bg-slate-700" : "bg-slate-200"
+    <div className="space-y-4">
+      {[1, 2, 3].map((i) => (
+        <div
+          key={i}
+          className={`p-4 rounded-xl animate-pulse border ${
+            dark
+              ? "bg-slate-800 border-slate-700"
+              : "bg-white border-slate-200 shadow-sm"
           }`}
-        />
+        >
+          <div className={`h-4 w-1/3 rounded mb-2 ${dark ? "bg-slate-700" : "bg-slate-200"}`} />
+          <div className={`h-3 w-1/4 rounded ${dark ? "bg-slate-700" : "bg-slate-200"}`} />
+        </div>
       ))}
     </div>
   );
 }
+
 
 function SignupPage({ dark }) {
   const [name, setName] = useState("");
@@ -335,55 +412,58 @@ function SignupPage({ dark }) {
   };
 
   return (
-    <div className={dark ? "min-h-screen flex items-center justify-center bg-slate-900 p-6" : "min-h-screen flex items-center justify-center bg-slate-50 p-6"}>
-      <div className={dark ? "w-full max-w-xl bg-slate-800 rounded-2xl shadow p-8 text-white" : "w-full max-w-xl bg-white rounded-2xl shadow p-8 text-slate-900"}>
-        <h2 className="text-2xl font-semibold mb-2">Create your account</h2>
-        <p className={dark ? "text-sm text-slate-300 mb-6" : "text-sm text-slate-500 mb-6"}>
-          Sign up to generate summaries from lecture recordings.
+    <div className={dark ? "min-h-screen flex items-center justify-center bg-slate-900" : "min-h-screen flex items-center justify-center bg-slate-50"}>
+      <div className={dark ? "w-full max-w-lg bg-slate-800 rounded-2xl border border-slate-700 shadow-xl p-8 text-white" : "w-full max-w-lg bg-white rounded-2xl border border-slate-200 shadow-xl p-8 text-slate-900"}>
+        <h2 className="text-2xl font-semibold">Create your account</h2>
+        <p className={dark ? "text-sm text-slate-400 mt-1 mb-6" : "text-sm text-slate-500 mt-1 mb-6"}>
+          Start converting lectures into clear study notes.
         </p>
 
         <form onSubmit={submit} className="space-y-4">
           <div>
-            <label className={dark ? "block text-sm text-slate-300" : "block text-sm text-slate-600"}>Full name</label>
+            <label className="text-sm">Full name</label>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className={dark ? "w-full mt-1 px-3 py-2 border rounded-lg bg-slate-700 text-white border-slate-600" : "w-full mt-1 px-3 py-2 border rounded-lg bg-white text-slate-900 border-slate-300"}
+              className={dark ? "w-full mt-1 px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 text-white focus:ring-2 focus:ring-indigo-500" : "w-full mt-1 px-3 py-2 rounded-lg bg-white border border-slate-300 focus:ring-2 focus:ring-indigo-500"}
               placeholder="Your name"
               required
             />
           </div>
+
           <div>
-            <label className={dark ? "block text-sm text-slate-300" : "block text-sm text-slate-600"}>Email</label>
+            <label className="text-sm">Email</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className={dark ? "w-full mt-1 px-3 py-2 border rounded-lg bg-slate-700 text-white border-slate-600" : "w-full mt-1 px-3 py-2 border rounded-lg bg-white text-slate-900 border-slate-300"}
+              className={dark ? "w-full mt-1 px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 text-white focus:ring-2 focus:ring-indigo-500" : "w-full mt-1 px-3 py-2 rounded-lg bg-white border border-slate-300 focus:ring-2 focus:ring-indigo-500"}
               placeholder="you@college.edu"
               required
             />
           </div>
+
           <div>
-            <label className={dark ? "block text-sm text-slate-300" : "block text-sm text-slate-600"}>Password</label>
+            <label className="text-sm">Password</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className={dark ? "w-full mt-1 px-3 py-2 border rounded-lg bg-slate-700 text-white border-slate-600" : "w-full mt-1 px-3 py-2 border rounded-lg bg-white text-slate-900 border-slate-300"}
+              className={dark ? "w-full mt-1 px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 text-white focus:ring-2 focus:ring-indigo-500" : "w-full mt-1 px-3 py-2 rounded-lg bg-white border border-slate-300 focus:ring-2 focus:ring-indigo-500"}
               placeholder="Choose a password"
               required
             />
           </div>
 
-          {err && <div className="text-red-600 text-sm">{err}</div>}
+          {err && <div className="text-sm text-red-500">{err}</div>}
 
-          <div className="flex items-center justify-between">
-            <button className="px-4 py-2 rounded-lg bg-indigo-600 text-white font-medium">
-              Create account
-            </button>
-            <Link to="/login" className={dark ? "text-sm text-slate-300" : "text-sm text-slate-600"}>
-              Already have an account?
+          <button className="w-full mt-2 px-4 py-2 rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-700 transition">
+            Create account
+          </button>
+
+          <div className="text-center">
+            <Link to="/login" className={dark ? "text-sm text-slate-400 hover:text-white" : "text-sm text-slate-600 hover:text-slate-900"}>
+              Already have an account? Log in
             </Link>
           </div>
         </form>
@@ -391,6 +471,7 @@ function SignupPage({ dark }) {
     </div>
   );
 }
+
 
 function LoginPage({ dark }) {
   const [email, setEmail] = useState("");
@@ -410,45 +491,47 @@ function LoginPage({ dark }) {
   };
 
   return (
-    <div className={dark ? "min-h-screen flex items-center justify-center bg-slate-900 p-6" : "min-h-screen flex items-center justify-center bg-slate-50 p-6"}>
-      <div className={dark ? "w-full max-w-md bg-slate-800 rounded-2xl shadow p-8 text-white" : "w-full max-w-md bg-white rounded-2xl shadow p-8 text-slate-900"}>
-        <h2 className="text-2xl font-semibold mb-2">Welcome back</h2>
-        <p className={dark ? "text-sm text-slate-300 mb-6" : "text-sm text-slate-500 mb-6"}>
+    <div className={dark ? "min-h-screen flex items-center justify-center bg-slate-900" : "min-h-screen flex items-center justify-center bg-slate-50"}>
+      <div className={dark ? "w-full max-w-md bg-slate-800 rounded-2xl border border-slate-700 shadow-xl p-8 text-white" : "w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-xl p-8 text-slate-900"}>
+        <h2 className="text-2xl font-semibold">Welcome back</h2>
+        <p className={dark ? "text-sm text-slate-400 mt-1 mb-6" : "text-sm text-slate-500 mt-1 mb-6"}>
           Log in to access your lecture summaries.
         </p>
 
         <form onSubmit={submit} className="space-y-4">
           <div>
-            <label className={dark ? "block text-sm text-slate-300" : "block text-sm text-slate-600"}>Email</label>
+            <label className="text-sm">Email</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className={dark ? "w-full mt-1 px-3 py-2 border rounded-lg bg-slate-700 text-white border-slate-600" : "w-full mt-1 px-3 py-2 border rounded-lg bg-white text-slate-900 border-slate-300"}
+              className={dark ? "w-full mt-1 px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 text-white focus:ring-2 focus:ring-indigo-500" : "w-full mt-1 px-3 py-2 rounded-lg bg-white border border-slate-300 focus:ring-2 focus:ring-indigo-500"}
               placeholder="you@college.edu"
               required
             />
           </div>
+
           <div>
-            <label className={dark ? "block text-sm text-slate-300" : "block text-sm text-slate-600"}>Password</label>
+            <label className="text-sm">Password</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className={dark ? "w-full mt-1 px-3 py-2 border rounded-lg bg-slate-700 text-white border-slate-600" : "w-full mt-1 px-3 py-2 border rounded-lg bg-white text-slate-900 border-slate-300"}
+              className={dark ? "w-full mt-1 px-3 py-2 rounded-lg bg-slate-700 border border-slate-600 text-white focus:ring-2 focus:ring-indigo-500" : "w-full mt-1 px-3 py-2 rounded-lg bg-white border border-slate-300 focus:ring-2 focus:ring-indigo-500"}
               placeholder="Your password"
               required
             />
           </div>
 
-          {err && <div className="text-red-600 text-sm">{err}</div>}
+          {err && <div className="text-sm text-red-500">{err}</div>}
 
-          <div className="flex items-center justify-between">
-            <button className="px-4 py-2 rounded-lg bg-indigo-600 text-white font-medium">
-              Log in
-            </button>
-            <Link to="/signup" className={dark ? "text-sm text-slate-300" : "text-sm text-slate-600"}>
-              Create account
+          <button className="w-full mt-2 px-4 py-2 rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-700 transition">
+            Log in
+          </button>
+
+          <div className="text-center">
+            <Link to="/signup" className={dark ? "text-sm text-slate-400 hover:text-white" : "text-sm text-slate-600 hover:text-slate-900"}>
+              Create an account
             </Link>
           </div>
         </form>
@@ -457,9 +540,11 @@ function LoginPage({ dark }) {
   );
 }
 
+
 function DashboardPage({ dark }) {
   const user = getCurrentUser();
   const [stats, setStats] = useState({ count: 0, totalWords: 0, estMinutesSaved: 0 });
+
   useEffect(() => {
     if (!user?.id) return;
     fetch(`${API_BASE}/api/user/${encodeURIComponent(user.id)}/stats`)
@@ -467,71 +552,133 @@ function DashboardPage({ dark }) {
       .then((j) => {
         const count = j.count || 0;
         const totalWords = j.total_words || 0;
-        const estMinutesSaved = Math.round((count * 8) + totalWords / 300);
+        const estMinutesSaved = Math.round(count * 8 + totalWords / 300);
         setStats({ count, totalWords, estMinutesSaved });
       })
       .catch(() => {});
   }, [user]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
+
+      {/* Hero section */}
+      <div className={dark
+        ? "rounded-2xl p-6 bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700"
+        : "rounded-2xl p-6 bg-gradient-to-br from-indigo-50 to-white border border-slate-200"
+      }>
+        <h2 className={dark ? "text-2xl font-semibold text-white" : "text-2xl font-semibold text-slate-900"}>
+          Your study dashboard
+        </h2>
+        <p className={dark ? "text-sm text-slate-300 mt-1" : "text-sm text-slate-600 mt-1"}>
+          Convert long lectures into clear summaries, key points, and practice questions.
+        </p>
+      </div>
+
+      {/* Action cards */}
       <div className="grid grid-cols-3 gap-4">
         <Card
           title="Quick Summarize"
-          desc="Upload a short lecture clip or give a YouTube link and get a concise summary and study aids."
+          desc="Upload a short lecture clip or provide a YouTube link to generate instant study notes."
           linkTo="/summarize"
           dark={dark}
         />
+
         <Card
-          title="History"
-          desc="All your processed lectures and exports. Search, sort and delete from here."
+          title="Lecture History"
+          desc="Browse all your processed lectures. Search, favorite, rename or delete summaries."
           linkTo="/history"
           dark={dark}
         />
-        <div className={dark ? "p-4 rounded-lg shadow-sm bg-slate-800 border-slate-700 text-white" : "p-4 rounded-lg shadow-sm bg-white border text-slate-900"}>
-          <div className="text-sm font-semibold">Your stats</div>
-          <div className="mt-3">
-            <div className="text-2xl font-bold">{stats.count}</div>
-            <div className={dark ? "text-xs text-slate-300" : "text-xs text-slate-500"}>summaries completed</div>
+
+        {/* Stats card – highlighted */}
+        <div className={dark
+          ? "p-5 rounded-xl bg-slate-800 border border-slate-700 shadow-lg"
+          : "p-5 rounded-xl bg-white border border-slate-200 shadow-lg"
+        }>
+          <div className={dark ? "text-xs uppercase text-slate-400" : "text-xs uppercase text-slate-500"}>
+            Your progress
           </div>
-          <div className="mt-3">
-            <div className="text-lg font-semibold">{stats.estMinutesSaved} min</div>
-            <div className={dark ? "text-xs text-slate-300" : "text-xs text-slate-500"}>estimated time saved</div>
+
+          <div className="mt-4 flex items-end gap-4">
+            <div>
+              <div className="text-3xl font-bold">{stats.count}</div>
+              <div className={dark ? "text-xs text-slate-300" : "text-xs text-slate-500"}>
+                summaries
+              </div>
+            </div>
+
+            <div className="h-10 w-px bg-slate-300/30" />
+
+            <div>
+              <div className="text-2xl font-semibold">{stats.estMinutesSaved} min</div>
+              <div className={dark ? "text-xs text-slate-300" : "text-xs text-slate-500"}>
+                time saved
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className={dark ? "rounded-lg p-6 border bg-slate-800 border-slate-700 text-white" : "rounded-lg p-6 border bg-gradient-to-r from-indigo-50 to-white border text-slate-900"}>
+      {/* Getting started */}
+      <div className={dark
+        ? "rounded-xl p-6 bg-slate-800 border border-slate-700"
+        : "rounded-xl p-6 bg-white border border-slate-200"
+      }>
         <h3 className="text-lg font-semibold mb-2">Getting started</h3>
         <p className={dark ? "text-sm text-slate-300" : "text-sm text-slate-600"}>
-          Upload a lecture recording (MP3/WAV) or provide a YouTube classroom link on the
-          Summarize page. The app will transcribe, summarize and generate keywords & questions.
-          For best demo performance, try using 2–10 minute recordings to get results quickly.
+          Upload a lecture recording (MP3/WAV) or paste a YouTube classroom link.
+          The app will transcribe the audio, generate a concise summary, extract keywords,
+          and create practice questions automatically.
+          <br /><br />
+          <span className="font-medium">
+            Tip:
+          </span>{" "}
+          For best demo results, use 2–10 minute recordings.
         </p>
       </div>
     </div>
   );
 }
 
+
 function Card({ title, desc, linkTo, dark }) {
   return (
-    <div className={dark ? "p-4 rounded-lg border shadow-sm bg-slate-800 border-slate-700 text-white" : "p-4 rounded-lg border shadow-sm bg-white border-slate-200 text-slate-900"}>
-      <div>
-        <div className="text-sm text-indigo-600 font-semibold">{title}</div>
-        <div className={dark ? "mt-2 text-sm text-slate-300" : "mt-2 text-sm text-slate-600"}>{desc}</div>
+    <Link
+      to={linkTo}
+      className={`block p-5 rounded-xl border transition-all duration-200
+        ${
+          dark
+            ? "bg-slate-800 border-slate-700 text-white hover:bg-slate-700 hover:border-slate-600"
+            : "bg-white border-slate-200 text-slate-900 hover:shadow-md hover:border-slate-300"
+        }
+      `}
+    >
+      <div className="flex flex-col h-full justify-between">
+        <div>
+          <div className="text-xs uppercase tracking-wide text-indigo-500 font-semibold">
+            {title}
+          </div>
+
+          <div className={dark ? "mt-3 text-sm text-slate-300" : "mt-3 text-sm text-slate-600"}>
+            {desc}
+          </div>
+        </div>
+
+        <div className="mt-4 text-sm font-medium text-indigo-500 flex items-center gap-1">
+          Open
+          <span className="transition-transform group-hover:translate-x-1">→</span>
+        </div>
       </div>
-      <div className="mt-4">
-        <Link to={linkTo} className={dark ? "text-indigo-300 text-sm font-medium" : "text-indigo-600 text-sm font-medium"}>
-          Open →
-        </Link>
-      </div>
-    </div>
+    </Link>
   );
 }
+
 
 // ---------- Summarize Page (with progress bar + file/YT toggle) ----------
 function SummarizePage({ dark }) {
   const [studyMode, setStudyMode] = useState(true);
+  const [showFullTranscript, setShowFullTranscript] = useState(false);
+  const [activeTab, setActiveTab] = useState("summary");
   const [pollInterval, setPollInterval] = useState(2000);
   const [mode, setMode] = useState("file"); // "file" | "youtube"
   const [file, setFile] = useState(null);
@@ -648,325 +795,274 @@ useEffect(() => {
     setStatus("Resuming previous task...");
   }
 }, []);
+useEffect(() => {
+  if (result) {
+    setActiveTab("summary");
+  }
+}, [result]);
 
-  return (
-    <div className={dark ? "bg-slate-800 p-6 rounded-lg border border-slate-700 text-white" : "bg-white p-6 rounded-lg border border-slate-200 text-slate-900"}>
-      <h3 className="text-lg font-semibold mb-2">Summarize a lecture</h3>
-      <p className={dark ? "text-sm text-slate-300 mb-4" : "text-sm text-slate-600 mb-4"}>
-        Either upload an MP3/WAV file or paste a YouTube lecture link. For best results, use 2–10 minute recordings.
+return (
+  <div className="space-y-8">
+
+    {/* Hero / Upload Section */}
+    <div
+      className={
+        dark
+          ? "rounded-2xl p-6 bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700"
+          : "rounded-2xl p-6 bg-gradient-to-br from-indigo-50 to-white border border-slate-200"
+      }
+    >
+      <h3 className="text-xl font-semibold mb-1">Summarize a lecture</h3>
+      <p className={dark ? "text-sm text-slate-300 mb-6" : "text-sm text-slate-600 mb-6"}>
+        Upload an audio file or paste a YouTube lecture link. We’ll turn it into clean study notes.
       </p>
 
-      <form onSubmit={submit} className="grid grid-cols-2 gap-4">
+      <form onSubmit={submit} className="grid grid-cols-2 gap-5">
+
         {/* Mode toggle */}
-        <div className="col-span-2 flex gap-3 mb-2">
-          <button
-            type="button"
-            onClick={() => setMode("file")}
-            className={`px-3 py-1 rounded border text-sm ${
-              mode === "file"
-                ? "bg-indigo-600 text-white border-indigo-600"
-                : dark
-                ? "bg-slate-700 text-white border-slate-600"
-                : "bg-white text-slate-700 border-slate-300"
-            }`}
-          >
-            Upload audio file
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode("youtube")}
-            className={`px-3 py-1 rounded border text-sm ${
-              mode === "youtube"
-                ? "bg-indigo-600 text-white border-indigo-600"
-                : dark
-                ? "bg-slate-700 text-white border-slate-600"
-                : "bg-white text-slate-700 border-slate-300"
-            }`}
-          >
-            YouTube link
-          </button>
+        <div className="col-span-2 flex gap-2">
+          {["file", "youtube"].map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setMode(m)}
+              className={`px-4 py-2 rounded-full text-sm font-medium transition
+                ${
+                  mode === m
+                    ? "bg-indigo-600 text-white"
+                    : dark
+                    ? "bg-slate-700 text-white hover:bg-slate-600"
+                    : "bg-white text-slate-700 border hover:bg-slate-50"
+                }`}
+            >
+              {m === "file" ? "Upload audio" : "YouTube link"}
+            </button>
+          ))}
         </div>
 
         {/* Title */}
         <div>
-          <label className={dark ? "block text-sm text-slate-300" : "block text-sm text-slate-600"}>Lecture title</label>
+          <label className="text-sm opacity-70">Lecture title</label>
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className={`mt-1 w-full px-3 py-2 border rounded ${dark ? "bg-slate-700 text-white border-slate-600" : "bg-white text-slate-900 border-slate-300"}`}
-            placeholder="e.g. Data Structures - Recursion"
+            placeholder="e.g. DBMS – Indexing"
+            className={`mt-1 w-full px-4 py-2 rounded-lg border ${
+              dark
+                ? "bg-slate-700 border-slate-600 text-white"
+                : "bg-white border-slate-300"
+            }`}
           />
         </div>
+
         {/* Summary Length */}
-<div>
-  <label className={dark ? "block text-sm text-slate-300" : "block text-sm text-slate-600"}>
-    Summary length
-  </label>
-  <select
-    value={summaryLength}
-    onChange={(e) => setSummaryLength(e.target.value)}
-    className={`mt-1 w-full px-3 py-2 border rounded ${
-      dark
-        ? "bg-slate-700 text-white border-slate-600"
-        : "bg-white text-slate-900 border-slate-300"
-    }`}
-  >
-    <option value="short">Short</option>
-    <option value="medium">Medium</option>
-    <option value="detailed">Detailed</option>
-  </select>
-</div>
+        <div>
+          <label className="text-sm opacity-70">Summary length</label>
+          <select
+            value={summaryLength}
+            onChange={(e) => setSummaryLength(e.target.value)}
+            className={`mt-1 w-full px-4 py-2 rounded-lg border ${
+              dark
+                ? "bg-slate-700 border-slate-600 text-white"
+                : "bg-white border-slate-300"
+            }`}
+          >
+            <option value="short">Short</option>
+            <option value="medium">Medium</option>
+            <option value="detailed">Detailed</option>
+          </select>
+        </div>
 
-
-        {/* File OR YouTube input */}
+        {/* File / YouTube input */}
         {mode === "file" ? (
-          <div>
-            <label className={dark ? "block text-sm text-slate-300" : "block text-sm text-slate-600"}>Audio file</label>
-<div className="mt-1">
-  <input
-    type="file"
-    id="audio-upload"
-    accept="audio/*"
-    onChange={(e) => setFile(e.target.files[0])}
-    className="hidden"
-  />
-
-  <label
-    htmlFor="audio-upload"
-    className={`inline-flex items-center gap-2 px-4 py-2 rounded cursor-pointer text-sm font-medium
-      ${
-        dark
-          ? "bg-slate-700 text-white hover:bg-slate-600"
-          : "bg-slate-100 text-slate-800 hover:bg-slate-200"
-      }`}
-  >
-    📁 Upload audio
-  </label>
-
-  {file && (
-    <div className={dark ? "mt-2 text-xs text-slate-300" : "mt-2 text-xs text-slate-500"}>
-      Selected: <span className="font-medium">{file.name}</span>
-    </div>
-  )}
-</div>
-
+          <div className="col-span-2">
+            <input
+              type="file"
+              id="audio-upload"
+              accept="audio/*"
+              onChange={(e) => setFile(e.target.files[0])}
+              className="hidden"
+            />
+            <label
+              htmlFor="audio-upload"
+              className={`block w-full text-center px-6 py-6 rounded-xl cursor-pointer border-dashed border-2 transition
+                ${
+                  dark
+                    ? "border-slate-600 hover:bg-slate-700"
+                    : "border-slate-300 hover:bg-slate-50"
+                }`}
+            >
+              📁 Click to upload audio
+              {file && (
+                <div className="mt-2 text-xs opacity-70">
+                  Selected: {file.name}
+                </div>
+              )}
+            </label>
           </div>
         ) : (
-          <div>
-            <label className={dark ? "block text-sm text-slate-300" : "block text-sm text-slate-600"}>YouTube lecture URL</label>
+          <div className="col-span-2">
             <input
               type="url"
               value={youtubeUrl}
               onChange={(e) => setYoutubeUrl(e.target.value)}
-              className={`mt-1 w-full px-3 py-2 border rounded ${dark ? "bg-slate-700 text-white border-slate-600" : "bg-white text-slate-900 border-slate-300"}`}
-              placeholder="https://www.youtube.com/watch?v=..."
+              placeholder="https://youtube.com/watch?v=..."
+              className={`w-full px-4 py-3 rounded-lg border ${
+                dark
+                  ? "bg-slate-700 border-slate-600 text-white"
+                  : "bg-white border-slate-300"
+              }`}
             />
           </div>
         )}
 
-        <div className="col-span-2 flex flex-col gap-3 mt-2">
-          <div className="flex items-center gap-3">
-            <button
-              className="px-4 py-2 bg-indigo-600 text-white rounded disabled:opacity-60"
-              disabled={isProcessing}
-            >
-              {isProcessing ? "Processing..." : "Summarize"}
-            </button>
-            <div className={dark ? "text-sm text-slate-300" : "text-sm text-slate-500"}>{status}</div>
-          </div>
+        {/* Submit + Status */}
+        <div className="col-span-2 space-y-3">
+          <button
+            disabled={isProcessing}
+            className="w-full py-3 rounded-xl bg-indigo-600 text-white font-medium disabled:opacity-60"
+          >
+            {isProcessing ? "Processing lecture..." : "Generate summary"}
+          </button>
 
-          {/* Progress bar */}
+          {status && (
+            <div className="text-sm opacity-70">{status}</div>
+          )}
+
           {isProcessing && (
-  <div className="w-full">
-    <div
-      className={
-        dark
-          ? "w-full h-2 rounded bg-slate-700 overflow-hidden"
-          : "w-full h-2 rounded bg-slate-200 overflow-hidden"
-      }
-    >
-      <div
-        className="h-2 rounded bg-indigo-500 transition-all duration-500"
-        style={{ width: `${progressValue}%` }}
-      />
-    </div>
-
-    <div className={dark ? "text-xs mt-1 text-slate-300" : "text-xs mt-1 text-slate-500"}>
-      Processing step: {status}
-    </div>
-  </div>
-)}
-
-        </div>
-      </form>
-
-{result && (() => {
-  const summaryText = result.summary?.short || "";
-  const keyPointsArr = extractKeyPointsFromText(
-    result.summary?.short || result.full_transcript || "",
-    result.keywords || [],
-    8
-  );
-  const keyPointsText = keyPointsArr.map(p => `• ${p}`).join("\n");
-
-const keywordsText = (result.keywords || []).join(", ");
-
-const questionsText = (result.questions || [])
-  .map((q, i) => `Q${i + 1}. ${q.question}${q.answer ? `\n   Answer: ${q.answer}` : ""}`)
-  .join("\n\n");
-
-const exportText = `
-LECTURE TITLE
-${result.title || "Lecture Notes"}
-
-========================
-SUMMARY
-========================
-${summaryText}
-
-========================
-KEY POINTS
-========================
-${keyPointsText}
-
-========================
-KEYWORDS
-========================
-${keywordsText || "N/A"}
-
-${questionsText ? `
-========================
-PRACTICE QUESTIONS
-========================
-${questionsText}
-` : ""}
-`.trim();
-
-
-  return (
-    <div className="mt-6 grid grid-cols-2 gap-4">
-
-          {/* View toggle */}
-          <div className="col-span-2 flex items-center justify-between">
-            <div className={dark ? "text-sm text-slate-300" : "text-sm text-slate-600"}>Viewing:</div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setViewKeyPoints(false)}
-                className={`px-3 py-1 rounded ${!viewKeyPoints ? "bg-indigo-600 text-white" : dark ? "bg-slate-700 text-white" : "bg-white text-slate-900"}`}
-              >
-                View Summary
-              </button>
-              <button
-                onClick={() => setViewKeyPoints(true)}
-                className={`px-3 py-1 rounded ${viewKeyPoints ? "bg-indigo-600 text-white" : dark ? "bg-slate-700 text-white" : "bg-white text-slate-900"}`}
-              >
-                Key Points
-              </button>
-            </div>
-          </div>
-          {/* ⭐ Export Actions */}
-<div className="col-span-2 flex justify-end gap-2 mb-2">
-  <button
-    onClick={() => copyToClipboard(exportText)}
-    className="px-3 py-1 rounded bg-indigo-600 text-white text-sm"
-  >
-    Copy
-  </button>
-
-<button
-  onClick={() => {
-    const baseName = safeFileName(result.title);
-    downloadTxt(`${baseName}.txt`, exportText);
-  }}
-  className="px-3 py-1 rounded border text-sm"
->
-  TXT
-</button>
-
-<button
-  onClick={() => {
-    const baseName = safeFileName(result.title);
-    downloadPdf(`${baseName}.pdf`, exportText);
-  }}
-  className="px-3 py-1 rounded border text-sm"
->
-  PDF
-</button>
-
-</div>
-
-
-          {/* Summary or Key Points */}
-          <div className={dark ? "bg-slate-800 p-4 rounded border border-slate-700 col-span-2 text-white" : "bg-white p-4 rounded border border-slate-200 col-span-2 text-slate-900"}>
-            <h4 className="font-medium">{viewKeyPoints ? "Key points" : "Short summary"}</h4>
-            {!viewKeyPoints ? (
-              <div className="text-sm mt-2" dangerouslySetInnerHTML={{ __html: highlightText(result.summary?.short || "", result.keywords || []) }} />
-            ) : (
-              <div className="mt-2">
-                <ul className="list-disc ml-5 space-y-2 text-sm">
-                  {extractKeyPointsFromText(result.summary?.short || result.full_transcript || "", result.keywords || [], 8).map((p, i) => (
-                    <li key={i} dangerouslySetInnerHTML={{ __html: highlightText(p, result.keywords || []) }} />
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-
-          {/* Keywords */}
-          <div className={dark ? "bg-slate-800 p-4 rounded border border-slate-700 text-white" : "bg-white p-4 rounded border border-slate-200 text-slate-900"}>
-            <h4 className="font-medium">Keywords</h4>
-            <div className="flex gap-2 flex-wrap mt-2">
-              {(result.keywords || []).map((k) => (
-                <span key={k} className={dark ? "px-2 py-1 text-xs bg-indigo-700 rounded text-white" : "px-2 py-1 text-xs bg-indigo-50 rounded text-indigo-700"}>
-                  {k}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          {/* Transcript */}
-          <div className={dark ? "col-span-2 bg-slate-800 p-4 rounded border border-slate-700 text-white" : "col-span-2 bg-white p-4 rounded border border-slate-200 text-slate-900"}>
-            <h4 className="font-medium">Transcript (first 1000 chars)</h4>
-            <pre className={dark ? "mt-2 p-3 border rounded bg-slate-900 max-h-64 overflow-auto text-sm text-white" : "mt-2 p-3 border rounded bg-slate-50 max-h-64 overflow-auto text-sm text-slate-900"}>{result.full_transcript?.slice(0, 1000)}</pre>
-          </div>
-
-          {/* Predicted questions */}
-          {result.questions && result.questions.length > 0 && (
-            <div className={dark ? "col-span-2 bg-slate-800 p-4 rounded border border-slate-700 text-white" : "col-span-2 bg-white p-4 rounded border border-slate-200 text-slate-900"}>
-              <div className="flex items-center justify-between">
-  <h4 className="font-medium">Predicted practice questions</h4>
-  <button
-    onClick={() => setStudyMode(v => !v)}
-    className="text-xs px-3 py-1 rounded bg-indigo-600 text-white"
-  >
-    {studyMode ? "Reveal answers" : "Hide answers"}
-  </button>
-</div>
-
-              <div className="mt-3 space-y-4">
-                {result.questions.map((q, idx) => (
-                  <div key={idx} className="text-sm">
-                    <div className="font-semibold">
-                      Q{idx + 1}. {q.question}
-                    </div>
-
-                    {!studyMode && q.answer && (
-  <div className={dark ? "mt-1 text-xs text-emerald-300" : "mt-1 text-xs text-emerald-700"}>
-    <span className="font-semibold">Answer:</span> {q.answer}
-  </div>
-)}
-
-                  </div>
-                ))}
-              </div>
+            <div className="w-full h-2 rounded bg-slate-300/20 overflow-hidden">
+              <div
+                className="h-2 bg-indigo-500 transition-all"
+                style={{ width: `${progressValue}%` }}
+              />
             </div>
           )}
         </div>
-        );
-})()}
-
+      </form>
     </div>
-  );
+
+    {/* RESULT SECTION (unchanged logic, cleaner container) */}
+{result && (
+  <div
+    className={`rounded-2xl p-6 border space-y-6 ${
+      dark
+        ? "bg-slate-800 border-slate-700"
+        : "bg-white border-slate-200"
+    }`}
+  >
+    {/* Tabs */}
+    <div className="flex gap-2">
+      {[
+        ["summary", "Summary"],
+        ["points", "Key Points"],
+        ["questions", "Questions"],
+        ["transcript", "Transcript"],
+      ].map(([key, label]) => (
+        <button
+          key={key}
+          onClick={() => setActiveTab(key)}
+          className={`px-4 py-1.5 rounded-full text-sm font-medium transition
+            ${
+              activeTab === key
+                ? "bg-indigo-600 text-white"
+                : dark
+                ? "bg-slate-700 text-slate-300 hover:bg-slate-600"
+                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+            }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+
+    {/* ================= TAB CONTENT ================= */}
+
+    {/* SUMMARY */}
+    {activeTab === "summary" && (
+      <div>
+        <h4 className="font-medium mb-2">Summary</h4>
+        <div
+          className="text-sm leading-relaxed"
+          dangerouslySetInnerHTML={{
+            __html: highlightText(result.summary?.short || "", result.keywords || []),
+          }}
+        />
+      </div>
+    )}
+
+    {/* KEY POINTS */}
+    {activeTab === "points" && (
+      <div>
+        <h4 className="font-medium mb-2">Key Points</h4>
+        <ul className="list-disc ml-5 space-y-2 text-sm">
+          {extractKeyPointsFromText(
+            result.summary?.short || result.full_transcript || "",
+            result.keywords || [],
+            10
+          ).map((p, i) => (
+            <li
+              key={i}
+              dangerouslySetInnerHTML={{
+                __html: highlightText(p, result.keywords || []),
+              }}
+            />
+          ))}
+        </ul>
+      </div>
+    )}
+
+    {/* QUESTIONS */}
+    {activeTab === "questions" && result.questions?.length > 0 && (
+      <div>
+        <h4 className="font-medium mb-3">Practice Questions</h4>
+        <div className="space-y-4">
+          {result.questions.map((q, idx) => (
+            <div key={idx} className="text-sm">
+              <div className="font-semibold">
+                Q{idx + 1}. {q.question}
+              </div>
+              {q.answer && (
+                <div className="mt-1 text-xs text-emerald-500">
+                  <span className="font-semibold">Answer:</span> {q.answer}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+
+    {/* TRANSCRIPT */}
+    {activeTab === "transcript" && (
+      <div>
+        <h4 className="font-medium mb-2">Transcript (preview)</h4>
+<div
+  className={`text-sm leading-relaxed whitespace-pre-wrap break-words ${
+    dark
+      ? "text-slate-200"
+      : "text-slate-800"
+  }`}
+>
+  {showFullTranscript
+    ? result.full_transcript
+    : result.full_transcript?.slice(0, 1200) + "..."}
+</div>
+<button
+  onClick={() => setShowFullTranscript(v => !v)}
+  className="mt-3 text-sm text-indigo-600 hover:underline"
+>
+  {showFullTranscript ? "Show less" : "View full transcript"}
+</button>
+
+
+      </div>
+    )}
+  </div>
+)}
+
+  </div>
+);
+
 }
 
 // ---------- History ----------
@@ -1066,117 +1162,171 @@ const filtered = useMemo(() => {
 }
 
 
-  return (
-    <div>
-      <h3 className={dark ? "text-lg font-semibold mb-3 text-white" : "text-lg font-semibold mb-3 text-slate-900"}>Processed lectures</h3>
+return (
+  <div className="space-y-6">
 
-      <div className="flex items-center gap-3 mb-3">
-        <div className={dark ? "flex items-center gap-2 border rounded p-2 bg-slate-800 border-slate-700" : "flex items-center gap-2 border rounded p-2 bg-white border-slate-200"}>
-          <Search className={dark ? "w-4 h-4 text-slate-300" : "w-4 h-4 text-slate-500"} />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by title or id..." className={dark ? "bg-transparent outline-none text-sm text-white" : "bg-transparent outline-none text-sm text-slate-800"} />
-        </div>
+    {/* Header */}
+    <div className="flex items-center justify-between">
+      <h3 className="text-xl font-semibold">
+        Lecture history
+      </h3>
+    </div>
 
-        <div className="flex items-center gap-2">
-          <button onClick={() => setSort("newest")} className={sort === "newest" ? "px-3 py-1 rounded bg-indigo-600 text-white" : dark ? "px-3 py-1 rounded bg-slate-700 text-white" : "px-3 py-1 rounded bg-white text-slate-800"}><SortDesc className="w-4 h-4 inline-block mr-1" />Newest</button>
-          <button onClick={() => setSort("oldest")} className={sort === "oldest" ? "px-3 py-1 rounded bg-indigo-600 text-white" : dark ? "px-3 py-1 rounded bg-slate-700 text-white" : "px-3 py-1 rounded bg-white text-slate-800"}><SortAsc className="w-4 h-4 inline-block mr-1" />Oldest</button>
-          <button onClick={() => setSort("title")} className={sort === "title" ? "px-3 py-1 rounded bg-indigo-600 text-white" : dark ? "px-3 py-1 rounded bg-slate-700 text-white" : "px-3 py-1 rounded bg-white text-slate-800"}>Title</button>
-          <button
-  onClick={() => setShowFavorites(v => !v)}
-  className={
-    showFavorites
-      ? "px-3 py-1 rounded bg-yellow-500 text-black"
-      : dark
-      ? "px-3 py-1 rounded bg-slate-700 text-white"
-      : "px-3 py-1 rounded bg-white text-slate-800"
-  }
->
-  <Star className="w-4 h-4 inline-block mr-1" />
-  Favorites
-</button>
-
-        </div>
+    {/* Controls */}
+    <div
+      className={
+        dark
+          ? "rounded-xl p-4 bg-slate-800 border border-slate-700 flex flex-wrap gap-3 items-center"
+          : "rounded-xl p-4 bg-white border border-slate-200 flex flex-wrap gap-3 items-center"
+      }
+    >
+      {/* Search */}
+      <div className="flex items-center gap-2 px-3 py-2 rounded border w-64">
+        <Search className="w-4 h-4 opacity-60" />
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search lectures..."
+          className="bg-transparent outline-none text-sm w-full"
+        />
       </div>
 
-      {status && (
-  <>
-    <HistorySkeleton dark={dark} />
-    <div className={dark ? "text-slate-300 animate-pulse" : "text-slate-500 animate-pulse"}>
-      {status}
+      {/* Sort */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => setSort("newest")}
+          className={`px-3 py-1 rounded text-sm ${
+            sort === "newest"
+              ? "bg-indigo-600 text-white"
+              : "opacity-70 hover:opacity-100"
+          }`}
+        >
+          Newest
+        </button>
+        <button
+          onClick={() => setSort("oldest")}
+          className={`px-3 py-1 rounded text-sm ${
+            sort === "oldest"
+              ? "bg-indigo-600 text-white"
+              : "opacity-70 hover:opacity-100"
+          }`}
+        >
+          Oldest
+        </button>
+        <button
+          onClick={() => setSort("title")}
+          className={`px-3 py-1 rounded text-sm ${
+            sort === "title"
+              ? "bg-indigo-600 text-white"
+              : "opacity-70 hover:opacity-100"
+          }`}
+        >
+          Title
+        </button>
+      </div>
+
+      {/* Favorites */}
+      <button
+        onClick={() => setShowFavorites(v => !v)}
+        className={`ml-auto px-3 py-1 rounded text-sm flex items-center gap-1 ${
+          showFavorites
+            ? "bg-yellow-400 text-black"
+            : "opacity-70 hover:opacity-100"
+        }`}
+      >
+        <Star className="w-4 h-4" />
+        Favorites
+      </button>
     </div>
-  </>
-)}
 
+    {/* Loading */}
+    {status && (
+      <div className="space-y-3">
+        <HistorySkeleton dark={dark} />
+        <div className="text-sm opacity-60 animate-pulse">{status}</div>
+      </div>
+    )}
 
-      {!status && showFavorites && filtered.length === 0 && (
-  <div className={dark ? "text-sm text-slate-300" : "text-sm text-slate-500"}>
-    ⭐ Please add favorites first
-  </div>
-)}
+    {/* Empty favorites */}
+    {!status && showFavorites && filtered.length === 0 && (
+      <div className="text-sm opacity-60">
+        ⭐ No favorite lectures yet
+      </div>
+    )}
 
-      {!status && filtered.length > 0 && (
-        <div className="grid gap-3">
-          {filtered.map((it) => (
-            <div
-              key={it.lectureId}
-              className={dark ? "p-3 border rounded flex justify-between items-center bg-slate-800 border-slate-700 text-white" : "p-3 border rounded flex justify-between items-center bg-white border-slate-200 text-slate-900"}
-            >
+    {/* List */}
+    {!status && filtered.length > 0 && (
+      <div className="space-y-3">
+        {filtered.map(it => (
+          <div
+            key={it.lectureId}
+            className={`group rounded-xl p-4 border transition hover:shadow-md ${
+              dark
+                ? "bg-slate-800 border-slate-700"
+                : "bg-white border-slate-200"
+            }`}
+          >
+            <div className="flex justify-between items-center">
+
+              {/* Info */}
               <div>
                 <div className="font-medium">{it.title}</div>
-                <div className={dark ? "text-xs text-slate-300" : "text-xs text-slate-500"}>
+                <div className="text-xs opacity-60">
                   {formatDateISO(it.uploadedAt)}
                 </div>
               </div>
-              <div className="flex items-center gap-4">
-  {/* ⭐ Favorite */}
-  <button
-    onClick={() => toggleFavorite(it.lectureId, it.isFavorite)}
-    title="Toggle favorite"
-  >
-    <Star
-      className={`w-5 h-5 ${
-        it.isFavorite
-          ? "fill-yellow-400 text-yellow-400"
-          : dark
-          ? "text-slate-400"
-          : "text-slate-500"
-      }`}
-    />
-  </button>
 
-  {/* Open */}
-  <Link
-    to={`/history/${it.lectureId}`}
-    className={dark ? "text-indigo-300 text-sm" : "text-indigo-600 text-sm"}
-  >
-    Open
-  </Link>
-  <a
-  href={`${API_BASE}/download_audio/${it.lectureId}`}
-  target="_blank"
-  rel="noopener noreferrer"
-  className={dark ? "text-emerald-300 text-sm" : "text-emerald-600 text-sm"}
-  title="Download original audio"
->
-  <Download className="w-4 h-4 inline-block mr-1" />
-  Audio
-</a>
+              {/* Actions */}
+              <div className="flex items-center gap-3">
 
+                {/* Favorite */}
+                <button
+                  onClick={() => toggleFavorite(it.lectureId, it.isFavorite)}
+                >
+                  <Star
+                    className={`w-5 h-5 ${
+                      it.isFavorite
+                        ? "fill-yellow-400 text-yellow-400"
+                        : "opacity-60"
+                    }`}
+                  />
+                </button>
 
-  {/* Delete */}
-  <button
-    onClick={() => handleDelete(it.lectureId)}
-    className={dark ? "flex items-center gap-2 text-sm text-red-300" : "flex items-center gap-2 text-sm text-red-600"}
-  >
-    <Trash2 className="w-4 h-4" /> Delete
-  </button>
-</div>
+                {/* Open */}
+                <Link
+                  to={`/history/${it.lectureId}`}
+                  className="text-indigo-600 text-sm"
+                >
+                  Open
+                </Link>
+
+                {/* Audio */}
+                <a
+                  href={`${API_BASE}/download_audio/${it.lectureId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-emerald-600 text-sm"
+                >
+                  Audio
+                </a>
+
+                {/* Delete */}
+                <button
+                  onClick={() => handleDelete(it.lectureId)}
+                  className="text-red-500 text-sm"
+                >
+                  Delete
+                </button>
+              </div>
 
             </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+);
+
 }
 
 function HistoryDetailPage({ dark }) {
@@ -1185,8 +1335,7 @@ function HistoryDetailPage({ dark }) {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [newTitle, setNewTitle] = useState("");
-
-
+  const [showFullTranscript, setShowFullTranscript] = useState(false);
   useEffect(() => {
     setLoading(true);
     fetch(`${API_BASE}/result/${id}`)
@@ -1255,147 +1404,216 @@ ${questionsText}
 `.trim();
 
 
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-3">
-        {editing ? (
-  <div className="flex gap-2">
+return (
+  <div className="space-y-6">
 
-
-<input
-  value={newTitle}
-  onChange={(e) => setNewTitle(e.target.value)}
-  className={`px-2 py-1 border rounded text-sm w-64 ${
-    dark
-      ? "bg-slate-700 text-white border-slate-600 placeholder-slate-400"
-      : "bg-white text-slate-900 border-slate-300"
-  }`}
-/>
-
-    <button onClick={saveTitle} className="text-sm text-indigo-600">Save</button>
-    <button onClick={() => setEditing(false)} className="text-sm">Cancel</button>
-  </div>
-) : (
-<div
-  className="flex items-center gap-2 cursor-pointer"
-  onDoubleClick={() => setEditing(true)}
-  title="Double click to rename"
->
-  <h3 className={dark ? "text-white" : "text-slate-900"}>
-    {doc.title}
-  </h3>
-  <span
-    onClick={() => setEditing(true)}
-    className={dark ? "text-slate-400 hover:text-white" : "text-slate-500 hover:text-slate-900"}
-    title="Rename title"
-  >
-    ✏️
-  </span>
-</div>
-
-)}
-
-
-  <div className="flex gap-2">
-        <a
-  href={`${API_BASE}/download_audio/${id}`}
-  target="_blank"
-  rel="noopener noreferrer"
-  className="px-3 py-1 rounded border text-sm"
->
-  🎧 Audio
-</a>
-    <button
-      onClick={() => copyToClipboard(exportText)}
-      className="px-3 py-1 rounded bg-indigo-600 text-white text-sm"
-    >
-      Copy
-    </button>
-
-<button
-  onClick={() => {
-    const baseName = safeFileName(doc.title);
-    downloadTxt(`${baseName}.txt`, exportText);
-  }}
-  className="px-3 py-1 rounded border text-sm"
->
-  TXT
-</button>
-
-<button
-  onClick={() => {
-    const baseName = safeFileName(doc.title);
-    downloadPdf(`${baseName}.pdf`, exportText);
-  }}
-  className="px-3 py-1 rounded border text-sm"
->
-  PDF
-</button>
-
-
-  </div>
-</div>
-
-
-      <div className="grid grid-cols-2 gap-4">
-        <div className={dark ? "bg-slate-800 p-4 rounded border border-slate-700 text-white" : "bg-white p-4 rounded border border-slate-200 text-slate-900"}>
-          <h4 className="font-medium">Short summary</h4>
-          <div className="text-sm mt-2" dangerouslySetInnerHTML={{ __html: highlightText(doc.summary?.short || "", doc.keywords || []) }} />
+    {/* Header */}
+    <div className="flex items-start justify-between gap-4">
+      {/* Title */}
+      {editing ? (
+        <div className="flex items-center gap-2">
+          <input
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            className={`px-3 py-2 border rounded-lg text-sm w-72 ${
+              dark
+                ? "bg-slate-700 text-white border-slate-600"
+                : "bg-white text-slate-900 border-slate-300"
+            }`}
+          />
+          <button onClick={saveTitle} className="text-sm text-indigo-600">
+            Save
+          </button>
+          <button onClick={() => setEditing(false)} className="text-sm opacity-60">
+            Cancel
+          </button>
         </div>
-
-        <div className={dark ? "bg-slate-800 p-4 rounded border border-slate-700 text-white" : "bg-white p-4 rounded border border-slate-200 text-slate-900"}>
-          <h4 className="font-medium">Keywords</h4>
-          <div className="flex gap-2 flex-wrap mt-2">
-            {(doc.keywords || []).map((k) => (
-              <span key={k} className={dark ? "px-2 py-1 text-xs bg-indigo-700 rounded text-white" : "px-2 py-1 text-xs bg-indigo-50 rounded text-indigo-700"}>
-                {k}
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-4">
-        <h4 className={dark ? "font-medium text-white" : "font-medium text-slate-900"}>Transcript (first 2000 chars)</h4>
-
-        <pre className={dark ? "mt-2 p-3 border rounded bg-slate-900 max-h-96 overflow-auto text-sm text-white" : "mt-2 p-3 border rounded bg-slate-50 max-h-96 overflow-auto text-sm text-slate-900"}>
-          {doc.full_transcript?.slice(0, 2000)}
-        </pre>
-
-        <div className="mt-4">
-          <h4 className={dark ? "font-medium text-white" : "font-medium text-slate-900"}>Key points</h4>
-          <div className={dark ? "mt-2 p-4 rounded border bg-slate-800 border-slate-700 text-white" : "mt-2 p-4 rounded border bg-white border-slate-200 text-slate-900"}>
-            <ul className="list-disc ml-5 space-y-2 text-sm">
-              {extractKeyPointsFromText(doc.summary?.short || doc.full_transcript || "", doc.keywords || [], 10).map((p, i) => (
-                <li key={i} dangerouslySetInnerHTML={{ __html: highlightText(p, doc.keywords || []) }} />
-              ))}
-            </ul>
-          </div>
-        </div>
-      </div>
-
-      {doc.questions && doc.questions.length > 0 && (
-        <div className={dark ? "mt-6 bg-slate-800 p-4 rounded border border-slate-700 text-white" : "mt-6 bg-white p-4 rounded border border-slate-200 text-slate-900"}>
-          <h4 className="font-medium">Predicted practice questions</h4>
-          <div className="mt-3 space-y-4">
-            {doc.questions.map((q, idx) => (
-              <div key={idx} className="text-sm">
-                <div className="font-semibold">
-                  Q{idx + 1}. {q.question}
-                </div>
-
-                {q.answer && (
-                  <div className={dark ? "mt-1 text-xs text-emerald-300" : "mt-1 text-xs text-emerald-700"}>
-                    <span className="font-semibold">Answer:</span> {q.answer}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
+      ) : (
+        <div
+          className="flex items-center gap-2 cursor-pointer"
+          onDoubleClick={() => setEditing(true)}
+          title="Double click to rename"
+        >
+          <h2 className="text-2xl font-semibold">
+            {doc.title}
+          </h2>
+          <span
+            onClick={() => setEditing(true)}
+            className="opacity-60 hover:opacity-100"
+          >
+            ✏️
+          </span>
         </div>
       )}
+
+      {/* Actions */}
+      <div className="flex flex-wrap gap-2">
+        <a
+          href={`${API_BASE}/download_audio/${id}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="px-3 py-1 rounded border text-sm"
+        >
+          🎧 Audio
+        </a>
+
+        <button
+          onClick={() => copyToClipboard(exportText)}
+          className="px-3 py-1 rounded bg-indigo-600 text-white text-sm"
+        >
+          Copy
+        </button>
+
+        <button
+          onClick={() => {
+            const baseName = safeFileName(doc.title);
+            downloadTxt(`${baseName}.txt`, exportText);
+          }}
+          className="px-3 py-1 rounded border text-sm"
+        >
+          TXT
+        </button>
+
+        <button
+          onClick={() => {
+            const baseName = safeFileName(doc.title);
+            downloadPdf(`${baseName}.pdf`, exportText);
+          }}
+          className="px-3 py-1 rounded border text-sm"
+        >
+          PDF
+        </button>
+      </div>
     </div>
-  );
+
+    {/* Summary + Keywords */}
+    <div className="grid grid-cols-2 gap-4">
+      <section
+        className={`rounded-xl p-4 border ${
+          dark
+            ? "bg-slate-800 border-slate-700"
+            : "bg-white border-slate-200"
+        }`}
+      >
+        <h4 className="font-medium mb-2">Summary</h4>
+        <div
+          className="text-sm leading-relaxed"
+          dangerouslySetInnerHTML={{
+            __html: highlightText(doc.summary?.short || "", doc.keywords || []),
+          }}
+        />
+      </section>
+
+      <section
+        className={`rounded-xl p-4 border ${
+          dark
+            ? "bg-slate-800 border-slate-700"
+            : "bg-white border-slate-200"
+        }`}
+      >
+        <h4 className="font-medium mb-2">Keywords</h4>
+        <div className="flex flex-wrap gap-2">
+          {(doc.keywords || []).map(k => (
+            <span
+              key={k}
+              className={`px-2 py-1 text-xs rounded ${
+                dark
+                  ? "bg-indigo-700 text-white"
+                  : "bg-indigo-50 text-indigo-700"
+              }`}
+            >
+              {k}
+            </span>
+          ))}
+        </div>
+      </section>
+    </div>
+
+    {/* Key Points */}
+    <section
+      className={`rounded-xl p-5 border ${
+        dark
+          ? "bg-slate-800 border-slate-700"
+          : "bg-white border-slate-200"
+      }`}
+    >
+      <h4 className="font-medium mb-3">Key points</h4>
+      <ul className="list-disc ml-5 space-y-2 text-sm">
+        {extractKeyPointsFromText(
+          doc.summary?.short || doc.full_transcript || "",
+          doc.keywords || [],
+          10
+        ).map((p, i) => (
+          <li
+            key={i}
+            dangerouslySetInnerHTML={{
+              __html: highlightText(p, doc.keywords || []),
+            }}
+          />
+        ))}
+      </ul>
+    </section>
+
+    {/* Transcript */}
+<section
+  className={`rounded-xl p-5 border ${
+    dark
+      ? "bg-slate-800 border-slate-700"
+      : "bg-white border-slate-200"
+  }`}
+>
+  <div className="flex items-center justify-between mb-2">
+    <h4 className="font-medium">Transcript</h4>
+
+    <button
+      onClick={() => setShowFullTranscript(v => !v)}
+      className="text-sm text-indigo-600 hover:underline"
+    >
+      {showFullTranscript ? "Show less" : "View full transcript"}
+    </button>
+  </div>
+
+  <div
+    className={`text-sm leading-relaxed whitespace-pre-wrap break-words ${
+      dark ? "text-slate-200" : "text-slate-800"
+    }`}
+  >
+    {showFullTranscript
+      ? doc.full_transcript
+      : doc.full_transcript?.slice(0, 1200) + "..."}
+  </div>
+</section>
+
+
+    {/* Practice Questions */}
+    {doc.questions && doc.questions.length > 0 && (
+      <section
+        className={`rounded-xl p-5 border ${
+          dark
+            ? "bg-slate-800 border-slate-700"
+            : "bg-white border-slate-200"
+        }`}
+      >
+        <h4 className="font-medium mb-3">Practice questions</h4>
+        <div className="space-y-4">
+          {doc.questions.map((q, idx) => (
+            <div key={idx} className="text-sm">
+              <div className="font-semibold">
+                Q{idx + 1}. {q.question}
+              </div>
+              {q.answer && (
+                <div className="mt-1 text-xs text-emerald-500">
+                  <span className="font-semibold">Answer:</span> {q.answer}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+    )}
+  </div>
+);
+
 }
 
 function ProfilePage({ dark }) {
@@ -1417,41 +1635,104 @@ function ProfilePage({ dark }) {
       .catch(() => {});
   }, [user]);
 
-  return (
-    <div className={dark ? "bg-slate-800 p-6 rounded-lg border border-slate-700 text-white max-w-2xl" : "bg-white p-6 rounded-lg border border-slate-200 text-slate-900 max-w-2xl"}>
-      <h3 className="text-lg font-semibold">Profile</h3>
-      <div className="mt-4 grid grid-cols-2 gap-4">
-        <div>
-          <div className={dark ? "text-xs text-slate-300" : "text-xs text-slate-500"}>Name</div>
-          <div className="text-sm font-medium">{user?.name}</div>
-        </div>
-        <div>
-          <div className={dark ? "text-xs text-slate-300" : "text-xs text-slate-500"}>Email</div>
-          <div className="text-sm font-medium">{user?.email}</div>
+return (
+  <div className="max-w-3xl space-y-6">
+
+    {/* Header */}
+    <div
+      className={`rounded-xl p-6 border ${
+        dark
+          ? "bg-slate-800 border-slate-700 text-white"
+          : "bg-white border-slate-200 text-slate-900"
+      }`}
+    >
+      <div className="flex items-center gap-4">
+        {/* Avatar */}
+        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-indigo-600 to-pink-500 flex items-center justify-center text-white text-xl font-bold">
+          {user?.name?.[0]?.toUpperCase() || "U"}
         </div>
 
+        {/* User Info */}
         <div>
-          <div className={dark ? "text-xs text-slate-300" : "text-xs text-slate-500"}>Joined</div>
-          <div className="text-sm font-medium">{stats.joined ? new Date(stats.joined).toLocaleDateString() : "—"}</div>
-        </div>
-
-        <div>
-          <div className={dark ? "text-xs text-slate-300" : "text-xs text-slate-500"}>Summaries</div>
-          <div className="text-sm font-medium">{stats.count}</div>
-        </div>
-
-        <div>
-          <div className={dark ? "text-xs text-slate-300" : "text-xs text-slate-500"}>Total words summarized</div>
-          <div className="text-sm font-medium">{stats.total_words}</div>
-        </div>
-
-        <div>
-          <div className={dark ? "text-xs text-slate-300" : "text-xs text-slate-500"}>Estimated time saved</div>
-          <div className="text-sm font-medium">{stats.est_minutes} min</div>
+          <div className="text-xl font-semibold">{user?.name}</div>
+          <div className={dark ? "text-sm text-slate-300" : "text-sm text-slate-500"}>
+            {user?.email}
+          </div>
         </div>
       </div>
     </div>
-  );
+
+    {/* Stats */}
+    <div className="grid grid-cols-3 gap-4">
+      <div
+        className={`p-4 rounded-xl border ${
+          dark
+            ? "bg-slate-800 border-slate-700"
+            : "bg-white border-slate-200"
+        }`}
+      >
+        <div className="text-xs opacity-70">Summaries</div>
+        <div className="text-2xl font-bold mt-1">{stats.count}</div>
+      </div>
+
+      <div
+        className={`p-4 rounded-xl border ${
+          dark
+            ? "bg-slate-800 border-slate-700"
+            : "bg-white border-slate-200"
+        }`}
+      >
+        <div className="text-xs opacity-70">Words summarized</div>
+        <div className="text-2xl font-bold mt-1">{stats.total_words}</div>
+      </div>
+
+      <div
+        className={`p-4 rounded-xl border ${
+          dark
+            ? "bg-slate-800 border-slate-700"
+            : "bg-white border-slate-200"
+        }`}
+      >
+        <div className="text-xs opacity-70">Time saved</div>
+        <div className="text-2xl font-bold mt-1">{stats.est_minutes} min</div>
+      </div>
+    </div>
+
+    {/* Account Details */}
+    <div
+      className={`rounded-xl p-6 border ${
+        dark
+          ? "bg-slate-800 border-slate-700"
+          : "bg-white border-slate-200"
+      }`}
+    >
+      <h4 className="font-medium mb-4">Account details</h4>
+
+      <div className="grid grid-cols-2 gap-4 text-sm">
+        <div>
+          <div className="opacity-60">Name</div>
+          <div className="font-medium">{user?.name}</div>
+        </div>
+
+        <div>
+          <div className="opacity-60">Email</div>
+          <div className="font-medium">{user?.email}</div>
+        </div>
+
+        <div>
+          <div className="opacity-60">Joined</div>
+          <div className="font-medium">
+            {stats.joined
+              ? new Date(stats.joined).toLocaleDateString()
+              : "—"}
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+);
+
 }
 
 // ---------- App ----------
@@ -1462,8 +1743,13 @@ export default function App() {
     setDarkMode(dark);
   }, [dark]);
 
-  return (
-    <Router>
+return (
+  <Router>
+    <div
+      className={`min-h-screen transition-colors duration-300 ${
+        dark ? "bg-slate-900" : "bg-slate-50"
+      }`}
+    >
       <Routes>
         <Route path="/signup" element={<SignupPage dark={dark} />} />
         <Route path="/login" element={<LoginPage dark={dark} />} />
@@ -1480,6 +1766,7 @@ export default function App() {
             </PrivateRoute>
           }
         />
+
         <Route
           path="/summarize"
           element={
@@ -1490,6 +1777,7 @@ export default function App() {
             </PrivateRoute>
           }
         />
+
         <Route
           path="/history"
           element={
@@ -1500,6 +1788,7 @@ export default function App() {
             </PrivateRoute>
           }
         />
+
         <Route
           path="/history/:id"
           element={
@@ -1510,6 +1799,7 @@ export default function App() {
             </PrivateRoute>
           }
         />
+
         <Route
           path="/profile"
           element={
@@ -1521,16 +1811,17 @@ export default function App() {
           }
         />
 
-        {/* fallback */}
         <Route
           path="*"
           element={
-            <div className="min-h-screen flex items-center justify-center">
+            <div className="min-h-screen flex items-center justify-center text-sm opacity-60">
               Page not found
             </div>
           }
         />
       </Routes>
-    </Router>
-  );
+    </div>
+  </Router>
+);
+
 }
