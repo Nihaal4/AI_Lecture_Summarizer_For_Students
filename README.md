@@ -44,24 +44,24 @@ It is designed specifically for **college students** to save time and improve ex
 
 ---
 
-## 📂 Project Structure
-
 PROJECT_ZEUS/
-│
 ├── backend/
-│ ├── app.py
-│ ├── venv/
-│ ├── uploads/
-│ ├── results/
-│ └── .env
+│   ├── app.py              # Flask backend application
+│   ├── .env                # Environment variables (not committed)
+│   ├── venv/               # Python virtual environment
+│   ├── uploads/            # Uploaded audio files
+│   └── results/            # Processed lecture results (JSON)
 │
 └── lecture-summarizer/
-├── src/
-│ ├── App.jsx
-│ ├── main.jsx
-│ └── index.css
-├── package.json
-└── vite.config.js
+    ├── src/
+    │   ├── App.jsx         # Main React application
+    │   ├── main.jsx        # React entry point
+    │   └── index.css       # Global styles (Tailwind CSS)
+    │
+    ├── public/             # Static assets
+    ├── package.json        # Frontend dependencies and scripts
+    └── vite.config.js      # Vite configuration
+
 
 
 ---
