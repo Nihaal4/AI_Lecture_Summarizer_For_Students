@@ -215,15 +215,11 @@ def save_uploaded_file(storage_file, dest_dir: Path) -> Path:
     storage_file.save(dest)
     return dest
 
-
 def download_youtube_audio(youtube_url: str, dest_dir: Path) -> Path:
-    """
-    Download audio from a YouTube URL as MP3 into dest_dir.
-    Returns the local file path.
-    """
     ydl_opts = {
         "format": "bestaudio/best",
         "outtmpl": str(dest_dir / "%(id)s.%(ext)s"),
+
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",
@@ -231,8 +227,64 @@ def download_youtube_audio(youtube_url: str, dest_dir: Path) -> Path:
                 "preferredquality": "128",
             }
         ],
+
         "quiet": True,
+
+        # ✅ Required for modern YouTube
+        "js_runtimes": {
+            "node": {}
+        },
+
+        # ✅ Force stable client
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android"]
+            }
+        },
+
+        # ✅ Browser-like headers
+        "http_headers": {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            )
+        },
+
+        "socket_timeout": 30,
+        "retries": 3,
+        "fragment_retries": 3,
     }
+
+    with YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(youtube_url, download=True)
+        return dest_dir / f"{info['id']}.mp3"
+
+
+    """
+    Download audio from a YouTube URL as MP3 into dest_dir.
+    Returns the local file path.
+    """
+    ydl_opts = {
+    "format": "bestaudio/best",
+    "outtmpl": str(dest_dir / "%(id)s.%(ext)s"),
+    "postprocessors": [
+        {
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+            "preferredquality": "128",
+        }
+    ],
+    "quiet": True,
+
+    # ✅ CORRECT FORMAT
+    "js_runtimes": {
+        "node": {}
+    },
+
+    "socket_timeout": 30,
+}
+
 
     with YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(youtube_url, download=True)
@@ -543,7 +595,8 @@ def api_delete_lecture(lecture_id):
     doc = lectures_col.find_one({"lectureId": lecture_id})
     # remove DB doc if present
     result = lectures_col.delete_one({"lectureId": lecture_id})
-    invalidate_lecture_cache(doc.get("userId"))
+    if doc:
+        invalidate_lecture_cache(doc.get("userId"))
     # remove results JSON file
     fp = RESULTS_DIR / f"{lecture_id}.json"
     try:

@@ -16,7 +16,7 @@ import {
   useLocation
 } from "react-router-dom";
 // import { Bell, LogOut, Home, FileText, Clock, User, Sun, Moon, Trash2, Search, SortAsc, SortDesc } from "lucide-react";
-import { Bell, LogOut, Home, FileText, Clock, User, Sun, Moon, Trash2, Search, SortAsc, SortDesc, Star } from "lucide-react";
+import {  LogOut, Home, FileText, Clock, User, Sun, Moon, Trash2, Search, SortAsc, SortDesc, Star } from "lucide-react";
 
 // ---------- Config ----------
 const AUTH_KEY = "ls_auth_user";
@@ -330,7 +330,7 @@ function Layout({ children, onToggleDark, dark }) {
             </div>
 
             <div className="flex items-center gap-4">
-              <Bell className={dark ? "w-5 h-5 text-slate-400" : "w-5 h-5 text-slate-500"} />
+
 
               <div className={dark ? "text-sm text-slate-400" : "text-sm text-slate-600"}>
                 {user?.email}
@@ -633,7 +633,7 @@ function DashboardPage({ dark }) {
           <span className="font-medium">
             Tip:
           </span>{" "}
-          For best demo results, use 2–10 minute recordings.
+          For best results, use 2–10 minute recordings.
         </p>
       </div>
     </div>
